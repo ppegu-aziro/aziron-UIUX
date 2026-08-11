@@ -39,10 +39,15 @@ import { FacetChips } from "./FacetChips";
 /**
  * The agent catalog.
  *
- * Deliberately the v1 listing — grid/list, status, success rate, visibility,
- * the same row of actions — so the only thing a returning user has to absorb
- * is the facet chips. Changing the noun and the layout in one release would
- * make the rename look like a rebuild.
+ * Deliberately the v1 listing — grid/list, status, visibility, the same row of
+ * actions — so the only thing a returning user has to absorb is the facet
+ * chips. Changing the noun and the layout in one release would make the rename
+ * look like a rebuild.
+ *
+ * No success-rate bar. It measures runs inside Aziron, and most of this list
+ * now runs elsewhere or has never run at all — a released-but-never-executed
+ * agent would be showing a number with nothing behind it, and a newly created
+ * one rendered as a red 0% that read as failure rather than "no runs yet".
  *
  * Clicking a card opens chat, exactly as it does today. Editing is a menu item,
  * because "open" and "configure" are different intents and v1 already settled
@@ -103,19 +108,6 @@ function VisibilityBadge({ visibility }) {
   );
 }
 
-function SuccessBar({ pct }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <div className="h-1 w-12 overflow-hidden rounded-full bg-muted">
-        <div
-          className={cn("h-full rounded-full", pct >= 90 ? "bg-success" : pct >= 70 ? "bg-warning" : "bg-destructive")}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span className="text-[10px] tabular-nums text-muted-foreground">{pct}%</span>
-    </div>
-  );
-}
 
 /** The action set, shared by grid and list so they cannot drift apart. */
 function AgentMenu({ agent, onChat, onEdit, onFork, onPublish, onDelete }) {
@@ -199,14 +191,13 @@ function AgentCard({ agent, actions }) {
 
       <FacetChips agent={agent} className="mt-2.5" />
 
-      <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-2.5">
+      <div className="mt-3 flex items-center gap-2 border-t border-border pt-2.5">
         <div className="flex min-w-0 items-center gap-2">
           <VisibilityBadge visibility={agent.visibility} />
           <Badge variant="secondary" className="shrink-0">
             {agent.category}
           </Badge>
         </div>
-        <SuccessBar pct={agent.successRate} />
       </div>
 
       <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
@@ -257,7 +248,6 @@ function AgentRow({ agent, actions, zebra }) {
         {agent.category}
       </Badge>
       <div className="hidden shrink-0 sm:block">
-        <SuccessBar pct={agent.successRate} />
       </div>
       <span className="hidden w-24 shrink-0 truncate text-[11px] text-muted-foreground md:block">
         {agent.lastRun}

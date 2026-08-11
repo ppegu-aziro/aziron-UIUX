@@ -16,9 +16,11 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Upload,
+  Sparkles,
   Wand2,
   Wrench,
 } from "lucide-react";
+import { Eye, PenLine } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +35,7 @@ import { ToolsChip } from "./FacetChips";
 import { KnowledgeDialog, ModelDialog, ReleaseDialog, ToolsDialog } from "./dialogs";
 import FileTree from "./FileTree";
 import SettingsPanel from "./SettingsPanel";
+import MarkdownPreview from "./MarkdownPreview";
 
 /**
  * The agent screen.
@@ -78,13 +81,39 @@ const Row = ({ label, value, mono }) => (
   </div>
 );
 
+/** Edit / Preview switch, shared by both editing surfaces. */
+function ModeToggle({ mode, setMode, disabled }) {
+  return (
+    <div className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5">
+      {[
+        { id: "edit", label: "Edit", icon: PenLine },
+        { id: "preview", label: "Preview", icon: Eye },
+      ].map((m) => (
+        <Button
+          key={m.id}
+          type="button"
+          size="xs"
+          variant={mode === m.id ? "secondary" : "ghost"}
+          onClick={() => setMode(m.id)}
+          aria-pressed={mode === m.id}
+          disabled={disabled && m.id === "preview"}
+          title={disabled && m.id === "preview" ? "Preview is for markdown files" : undefined}
+        >
+          <m.icon className="size-3" aria-hidden />
+          {m.label}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 const TABS = [
   { id: "instructions", label: "Instructions", icon: SlidersHorizontal },
   { id: "files", label: "Files", icon: FileCode },
   { id: "settings", label: "Settings", icon: Wrench },
 ];
 
-export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
+export default function AgentView({ agentId, onBack, onDistribute, onChat, onAuthor }) {
   const { get, patch, fork, saveFiles, addFile, addFolder, renameNode, deleteNode, duplicateNode, moveNode } =
     useAgentsV2();
   const agent = get(agentId);
@@ -92,6 +121,9 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
   const [tab, setTab] = useState("instructions");
   const [dialog, setDialog] = useState(null);
   const [busy, setBusy] = useState("");
+  // Edit vs Preview, the way a markdown editor does it. Kept per-screen rather
+  // than per-file so toggling does not reset every time you pick a file.
+  const [mode, setMode] = useState("edit");
 
   // Identity draft — committed on Save so a half-typed name never reaches the
   // catalog. Initial state, not an effect: the page keys this by agentId.
@@ -119,6 +151,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
   const activeFile = agent.files.find((f) => f.path === activePath) ?? agent.files[0];
   const activeContent = edits[activeFile?.path] ?? activeFile?.content ?? "";
   const isEntry = activeFile?.path === "AGENT.md";
+  const isMarkdown = /\.md$/i.test(activeFile?.path ?? "");
 
   const saveIdentity = () => {
     patch(agent.id, { name: draft.name.trim() || agent.name, description: draft.description.trim() });
@@ -181,6 +214,10 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => onAuthor?.(agent)}>
+            <Sparkles className="size-3.5" aria-hidden />
+            Author
+          </Button>
           <Button type="button" variant="outline" size="sm" onClick={() => onChat?.(agent)}>
             <MessageSquare className="size-3.5" aria-hidden />
             Chat
@@ -313,24 +350,35 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
               </div>
 
               <div>
-                <div className="mb-1.5 flex items-center justify-between gap-2">
+                <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                   <label htmlFor="ag-inst" className="text-xs font-medium text-foreground">
                     Instructions <span className="font-normal text-muted-foreground">— body of AGENT.md</span>
                   </label>
-                  {dirtyPaths.has("AGENT.md") && (
-                    <Button type="button" size="xs" onClick={saveDraft}>
-                      <Save className="size-3" aria-hidden />
-                      Save draft
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <ModeToggle mode={mode} setMode={setMode} />
+                    {dirtyPaths.has("AGENT.md") && (
+                      <Button type="button" size="xs" onClick={saveDraft}>
+                        <Save className="size-3" aria-hidden />
+                        Save draft
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <Textarea
-                  id="ag-inst"
-                  rows={14}
-                  value={edits["AGENT.md"] ?? agent.files.find((f) => f.path === "AGENT.md")?.content ?? ""}
-                  onChange={(e) => setEdits((s) => ({ ...s, "AGENT.md": e.target.value }))}
-                  className="resize-none font-mono text-xs leading-6"
-                />
+                {mode === "edit" ? (
+                  <Textarea
+                    id="ag-inst"
+                    rows={14}
+                    value={edits["AGENT.md"] ?? agent.files.find((f) => f.path === "AGENT.md")?.content ?? ""}
+                    onChange={(e) => setEdits((s) => ({ ...s, "AGENT.md": e.target.value }))}
+                    className="resize-none font-mono text-xs leading-6"
+                  />
+                ) : (
+                  <div className="min-h-[330px] overflow-y-auto rounded-lg border border-border bg-muted/20">
+                    <MarkdownPreview
+                      source={edits["AGENT.md"] ?? agent.files.find((f) => f.path === "AGENT.md")?.content ?? ""}
+                    />
+                  </div>
+                )}
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   This is the file itself — the Files tab shows the same bytes.
                 </p>
@@ -365,12 +413,13 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
 
                 <div className="flex min-w-0 flex-1 flex-col">
                   <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
-                    <span className="font-mono text-[11px] text-muted-foreground">{activeFile?.path}</span>
-                    {isEntry && (
-                      <Badge variant="outline" className="ml-auto">
-                        entrypoint
-                      </Badge>
-                    )}
+                    <span className="truncate font-mono text-[11px] text-muted-foreground">
+                      {activeFile?.path}
+                    </span>
+                    {isEntry && <Badge variant="outline">entrypoint</Badge>}
+                    <div className="ml-auto">
+                      <ModeToggle mode={mode} setMode={setMode} disabled={!isMarkdown} />
+                    </div>
                   </div>
 
                   {isEntry && (
@@ -383,12 +432,18 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
                     </pre>
                   )}
 
-                  <Textarea
-                    aria-label={`${activeFile?.path} content`}
-                    value={activeContent}
-                    onChange={(e) => setEdits((s) => ({ ...s, [activeFile.path]: e.target.value }))}
-                    className="min-h-[360px] flex-1 resize-none rounded-none border-0 bg-transparent font-mono text-[11px] leading-5 focus-visible:ring-0"
-                  />
+                  {mode === "preview" && isMarkdown ? (
+                    <div className="min-h-[360px] flex-1 overflow-y-auto bg-muted/20">
+                      <MarkdownPreview source={activeContent} />
+                    </div>
+                  ) : (
+                    <Textarea
+                      aria-label={`${activeFile?.path} content`}
+                      value={activeContent}
+                      onChange={(e) => setEdits((s) => ({ ...s, [activeFile.path]: e.target.value }))}
+                      className="min-h-[360px] flex-1 resize-none rounded-none border-0 bg-transparent font-mono text-[11px] leading-5 focus-visible:ring-0"
+                    />
+                  )}
                 </div>
               </div>
             </div>

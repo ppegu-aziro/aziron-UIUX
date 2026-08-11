@@ -11,31 +11,36 @@ import { Button } from "@/components/ui/button";
 
 import CatalogView from "@/components/agents-v2/CatalogView";
 import AgentView from "@/components/agents-v2/AgentView";
-import CreateView from "@/components/agents-v2/CreateView";
 import DistributeView from "@/components/agents-v2/DistributeView";
 import ChatPanel from "@/components/agents-v2/ChatPanel";
+import AuthorPanel from "@/components/agents-v2/AuthorPanel";
 import { AgentsV2Provider, useAgentsV2 } from "@/context/AgentsV2Context";
 
 /**
  * Agents v2 — the unified concept prototype.
  *
- * One noun ("Agent") absorbing what used to be two overlapping objects.
+ * There is no separate create screen. "New agent" makes an empty draft and
+ * opens the editor with the Author panel beside it, so generating and editing
+ * are the same view: ask for something, watch the files change, edit them by
+ * hand, ask for the next thing.
  *
- * The chat panel is an inline sibling of the content column, exactly as in the
- * live Agents page: it animates in at 400px, expands to full width, and hides
- * the main column when it does. It is not an overlay — that was a deviation,
- * and chat is the one surface here that should feel identical to today's.
+ * A wizard that generates and then hands you off to an editor makes the
+ * generated result feel finished and the editing feel like repair. Putting
+ * them side by side makes iteration the default.
+ *
+ * One side panel at a time — Author writes files, Chat talks to the agent.
+ * Both are inline siblings of the content column, as in the live page.
  */
 
 function AgentsV2Inner({ onNavigate }) {
-  const { get, reset } = useAgentsV2();
+  const { get, create, reset } = useAgentsV2();
   const [view, setView] = useState("catalog");
   const [agentId, setAgentId] = useState(null);
-  const [chatId, setChatId] = useState(null);
-  const [chatExpanded, setChatExpanded] = useState(false);
+  const [panel, setPanel] = useState(null); // { type: "chat" | "author", id }
+  const [expanded, setExpanded] = useState(false);
 
-  const chatAgent = chatId ? get(chatId) : null;
-  const hideMainColumn = Boolean(chatAgent) && chatExpanded;
+  const panelAgent = panel ? get(panel.id) : null;
+  const hideMainColumn = Boolean(panelAgent) && expanded;
 
   const openEditor = (a) => {
     setAgentId(a?.id ?? a);
@@ -47,12 +52,29 @@ function AgentsV2Inner({ onNavigate }) {
     setView("catalog");
   };
 
-  const closeChat = () => {
-    setChatId(null);
-    setChatExpanded(false);
+  const closePanel = () => {
+    setPanel(null);
+    setExpanded(false);
   };
 
-  const title = view === "create" ? "New agent" : view === "distribute" ? "Distribute" : "Agents";
+  const openPanel = (type, a) => {
+    setPanel({ type, id: a?.id ?? a });
+    setExpanded(false);
+  };
+
+  /** New agent: an empty draft, opened in the editor with Author beside it. */
+  const newAgent = () => {
+    const record = create({
+      name: "Untitled agent",
+      description: "",
+      instructions: "",
+      files: [{ path: "AGENT.md", content: "" }],
+    });
+    openEditor(record);
+    openPanel("author", record);
+  };
+
+  const title = view === "distribute" ? "Distribute" : "Agents";
 
   return (
     <main className="app-page-main flex h-full min-h-0 w-full flex-1 overflow-hidden bg-background">
@@ -60,11 +82,7 @@ function AgentsV2Inner({ onNavigate }) {
 
       <div className="flex h-full min-h-0 min-w-0 flex-1 overflow-hidden">
         <div
-          className={
-            hideMainColumn
-              ? "hidden"
-              : "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-          }
+          className={hideMainColumn ? "hidden" : "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"}
         >
           <AppHeader onNavigate={onNavigate} />
 
@@ -87,7 +105,7 @@ function AgentsV2Inner({ onNavigate }) {
                       onClick={() => {
                         reset();
                         backToCatalog();
-                        closeChat();
+                        closePanel();
                         toast.message("Prototype reset to its seed data");
                       }}
                     >
@@ -98,7 +116,7 @@ function AgentsV2Inner({ onNavigate }) {
                       <Boxes className="size-3" aria-hidden />
                       concept · v2
                     </Badge>
-                    <Button type="button" size="sm" onClick={() => setView("create")}>
+                    <Button type="button" size="sm" onClick={newAgent}>
                       <Plus className="size-3.5" aria-hidden />
                       New agent
                     </Button>
@@ -108,7 +126,7 @@ function AgentsV2Inner({ onNavigate }) {
 
               <div className="pb-12">
                 {view === "catalog" && (
-                  <CatalogView onChat={(a) => setChatId(a.id)} onEdit={openEditor} />
+                  <CatalogView onChat={(a) => openPanel("chat", a)} onEdit={openEditor} />
                 )}
 
                 {view === "agent" && agentId && (
@@ -117,12 +135,9 @@ function AgentsV2Inner({ onNavigate }) {
                     agentId={agentId}
                     onBack={backToCatalog}
                     onDistribute={() => setView("distribute")}
-                    onChat={(a) => setChatId(a.id)}
+                    onChat={(a) => openPanel("chat", a)}
+                    onAuthor={(a) => openPanel("author", a)}
                   />
-                )}
-
-                {view === "create" && (
-                  <CreateView onBack={backToCatalog} onCreated={(record) => openEditor(record)} />
                 )}
 
                 {view === "distribute" && agentId && (
@@ -134,13 +149,22 @@ function AgentsV2Inner({ onNavigate }) {
         </div>
 
         <AnimatePresence>
-          {chatAgent && (
+          {panelAgent && panel.type === "chat" && (
             <ChatPanel
-              key={chatAgent.id}
-              agent={chatAgent}
-              onClose={closeChat}
-              isExpanded={chatExpanded}
-              onToggleExpand={() => setChatExpanded((v) => !v)}
+              key={`chat-${panelAgent.id}`}
+              agent={panelAgent}
+              onClose={closePanel}
+              isExpanded={expanded}
+              onToggleExpand={() => setExpanded((v) => !v)}
+            />
+          )}
+          {panelAgent && panel.type === "author" && (
+            <AuthorPanel
+              key={`author-${panelAgent.id}`}
+              agent={panelAgent}
+              onClose={closePanel}
+              isExpanded={expanded}
+              onToggleExpand={() => setExpanded((v) => !v)}
             />
           )}
         </AnimatePresence>
