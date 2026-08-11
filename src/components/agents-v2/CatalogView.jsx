@@ -2,10 +2,11 @@ import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   Bot,
+  Boxes,
   Download,
-  Eye,
   GitFork,
   Globe,
+  Home,
   LayoutGrid,
   List,
   Lock,
@@ -15,6 +16,7 @@ import {
   Search,
   Trash2,
   Upload,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -30,7 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { CATEGORIES, FACET_FILTERS, STATUS, openToolCount } from "@/data/agentsV2";
+import { CATEGORIES, RUNS_IN_FILTERS, STATUS, VISIBILITY_FILTERS, openToolCount } from "@/data/agentsV2";
 import { useAgentsV2 } from "@/context/AgentsV2Context";
 import { FacetChips } from "./FacetChips";
 
@@ -267,7 +269,8 @@ function AgentRow({ agent, actions, zebra }) {
 
 export default function CatalogView({ onChat, onEdit }) {
   const { agents, remove, fork, patch } = useAgentsV2();
-  const [facet, setFacet] = useState("all");
+  const [visibility, setVisibility] = useState("all");
+  const [runsIn, setRunsIn] = useState([]);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState(null);
   const [openOnly, setOpenOnly] = useState(false);
@@ -277,10 +280,13 @@ export default function CatalogView({ onChat, onEdit }) {
   const openCount = openToolCount(agents);
 
   const filtered = useMemo(() => {
-    const test = FACET_FILTERS.find((f) => f.id === facet)?.test ?? (() => true);
     const q = query.trim().toLowerCase();
+    const runsInTests = RUNS_IN_FILTERS.filter((f) => runsIn.includes(f.id));
     return agents
-      .filter(test)
+      .filter((a) => (visibility === "all" ? true : a.visibility === visibility))
+      // OR across selected places: an agent that runs in Claude Code AND Codex
+      // should appear under either, not only when both are picked.
+      .filter((a) => (runsInTests.length === 0 ? true : runsInTests.some((f) => f.test(a))))
       .filter((a) => (openOnly ? a.tools === "open" : true))
       .filter((a) => (category ? a.category === category : true))
       .filter(
@@ -290,7 +296,18 @@ export default function CatalogView({ onChat, onEdit }) {
           a.description.toLowerCase().includes(q) ||
           a.category.toLowerCase().includes(q),
       );
-  }, [agents, facet, query, openOnly, category]);
+  }, [agents, visibility, runsIn, query, openOnly, category]);
+
+  const clearAll = () => {
+    setVisibility("all");
+    setRunsIn([]);
+    setCategory(null);
+    setOpenOnly(false);
+    setQuery("");
+  };
+
+  const hasFilter =
+    visibility !== "all" || runsIn.length > 0 || !!category || openOnly || !!query.trim();
 
   const actions = {
     onChat,
@@ -325,16 +342,18 @@ export default function CatalogView({ onChat, onEdit }) {
         </div>
 
         <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
-          {FACET_FILTERS.map((f) => (
+          {VISIBILITY_FILTERS.map((v) => (
             <Button
-              key={f.id}
+              key={v.id}
               type="button"
               size="xs"
-              variant={facet === f.id ? "secondary" : "ghost"}
-              onClick={() => setFacet(f.id)}
-              aria-pressed={facet === f.id}
+              variant={visibility === v.id ? "secondary" : "ghost"}
+              onClick={() => setVisibility(v.id)}
+              aria-pressed={visibility === v.id}
             >
-              {f.label}
+              {v.id === "public" && <Globe className="size-3" aria-hidden />}
+              {v.id === "private" && <Lock className="size-3" aria-hidden />}
+              {v.label}
             </Button>
           ))}
         </div>
@@ -363,9 +382,40 @@ export default function CatalogView({ onChat, onEdit }) {
         </div>
       </div>
 
+      {/* Where it runs. Aziron first, then the hosts it installs into. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="w-16 shrink-0 text-[11px] text-muted-foreground">Runs in:</span>
+        {RUNS_IN_FILTERS.map((f) => {
+          const on = runsIn.includes(f.id);
+          const count = agents.filter(f.test).length;
+          return (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setRunsIn((s) => (on ? s.filter((x) => x !== f.id) : [...s, f.id]))}
+              aria-pressed={on}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors",
+                on
+                  ? "border-primary/45 bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground hover:border-primary/30",
+              )}
+            >
+              {f.id === "aziron" ? (
+                <Home className="size-2.5" aria-hidden />
+              ) : (
+                <Boxes className="size-2.5" aria-hidden />
+              )}
+              {f.label}
+              <span className="tabular-nums opacity-60">{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Categories — v1's labels, renamed. */}
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[11px] text-muted-foreground">Category:</span>
+        <span className="w-16 shrink-0 text-[11px] text-muted-foreground">Category:</span>
         {CATEGORIES.map((c) => (
           <button
             key={c}
@@ -406,9 +456,17 @@ export default function CatalogView({ onChat, onEdit }) {
         </button>
       )}
 
-      <p className="text-xs text-muted-foreground">
-        Showing {filtered.length} of {agents.length}
-      </p>
+      <div className="flex items-center gap-2">
+        <p className="text-xs text-muted-foreground">
+          Showing {filtered.length} of {agents.length}
+        </p>
+        {hasFilter && (
+          <Button type="button" variant="ghost" size="xs" onClick={clearAll}>
+            <X className="size-3" aria-hidden />
+            Clear filters
+          </Button>
+        )}
+      </div>
 
       {view === "grid" ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

@@ -383,12 +383,30 @@ export const AGENTS_V2 = [
 export const runsHere = (a) => Boolean(a.runtime);
 export const runsAnywhere = (a) => Boolean(a.release);
 
-export const FACET_FILTERS = [
-  { id: "all", label: "All", test: () => true },
-  { id: "here", label: "Runs here", test: runsHere },
-  { id: "anywhere", label: "Runs anywhere", test: runsAnywhere },
-  { id: "both", label: "Both", test: (a) => runsHere(a) && runsAnywhere(a) },
-  { id: "incomplete", label: "Missing a half", test: (a) => !runsHere(a) || !runsAnywhere(a) },
+export const VISIBILITY_FILTERS = [
+  { id: "all", label: "All" },
+  { id: "public", label: "Public" },
+  { id: "private", label: "Private" },
+];
+
+/**
+ * Filter by where an agent actually runs.
+ *
+ * "Runs here / runs anywhere" was the right idea stated abstractly — a user
+ * scanning a list wants the concrete place, not the category of place. Aziron
+ * is simply the first entry: it is where the agent runs when it has a bound
+ * runtime, and the other four are where it lands once released.
+ *
+ * Multi-select with OR, because an agent genuinely runs in several at once and
+ * the interesting question is usually "what do I have for Claude Code?".
+ */
+export const RUNS_IN_FILTERS = [
+  { id: "aziron", label: "Aziron", test: runsHere },
+  ...TARGETS.map((t) => ({
+    id: t.id,
+    label: t.name,
+    test: (a) => a.targets.includes(t.id),
+  })),
 ];
 
 export function originCounts(list = AGENTS_V2) {
