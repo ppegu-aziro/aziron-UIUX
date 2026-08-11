@@ -33,7 +33,6 @@ import { ToolsChip } from "./FacetChips";
 import { KnowledgeDialog, ModelDialog, ReleaseDialog, ToolsDialog } from "./dialogs";
 import FileTree from "./FileTree";
 import SettingsPanel from "./SettingsPanel";
-import ChatPanel from "./ChatPanel";
 
 /**
  * The agent screen.
@@ -85,14 +84,13 @@ const TABS = [
   { id: "settings", label: "Settings", icon: Wrench },
 ];
 
-export default function AgentView({ agentId, onBack, onDistribute }) {
+export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
   const { get, patch, fork, saveFiles, addFile, addFolder, renameNode, deleteNode, duplicateNode, moveNode } =
     useAgentsV2();
   const agent = get(agentId);
 
   const [tab, setTab] = useState("instructions");
   const [dialog, setDialog] = useState(null);
-  const [chatOpen, setChatOpen] = useState(false);
   const [busy, setBusy] = useState("");
 
   // Identity draft — committed on Save so a half-typed name never reaches the
@@ -183,7 +181,7 @@ export default function AgentView({ agentId, onBack, onDistribute }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => setChatOpen(true)}>
+          <Button type="button" variant="outline" size="sm" onClick={() => onChat?.(agent)}>
             <MessageSquare className="size-3.5" aria-hidden />
             Chat
           </Button>
@@ -532,17 +530,6 @@ export default function AgentView({ agentId, onBack, onDistribute }) {
       {dialog === "tools" && <ToolsDialog agent={agent} open onOpenChange={() => setDialog(null)} />}
       {dialog === "knowledge" && <KnowledgeDialog agent={agent} open onOpenChange={() => setDialog(null)} />}
       {dialog === "release" && <ReleaseDialog agent={agent} open onOpenChange={() => setDialog(null)} />}
-
-      {chatOpen && (
-        <ChatPanel
-          agent={agent}
-          onClose={() => setChatOpen(false)}
-          onSetupRuntime={() => {
-            setChatOpen(false);
-            setDialog("model");
-          }}
-        />
-      )}
     </div>
   );
 }

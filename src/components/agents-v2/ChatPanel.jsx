@@ -1,219 +1,238 @@
 import { useEffect, useRef, useState } from "react";
-import { Cpu, Database, Send, Wrench, X } from "lucide-react";
+import { motion } from "motion/react";
+import {
+  Bot,
+  Copy,
+  Maximize2,
+  Minimize2,
+  Paperclip,
+  RotateCcw,
+  Send,
+  ThumbsDown,
+  ThumbsUp,
+  X,
+} from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
+import { STATUS } from "@/data/agentsV2";
 
 /**
- * Mock chat with an agent.
+ * Agent chat — a direct port of v1's AgentConversationPanel.
  *
- * Its job in the prototype is to make the "runs here" half concrete. The
- * replies are canned, but they are composed from the agent's ACTUAL config —
- * the knowledge attached, the tools granted, the model bound — so changing the
- * configuration visibly changes the conversation. An agent with no knowledge
- * says so; one with tools says which it used.
+ * Deliberately unchanged from the live product: same inline side panel rather
+ * than an overlay, same 64px header, same greeting on open, same bubble
+ * geometry, same per-message actions, same bouncing-dot loader, same composer
+ * with its control bar. Chat is the one surface in v2 that a returning user
+ * should not have to re-learn.
  *
- * That link is the point. A chat that answered identically regardless of
- * configuration would quietly teach reviewers that the configuration is
- * decorative.
+ * Two things differ, and only because v2's data model has more to say:
+ *   - the control bar names the model actually bound to this agent rather than
+ *     a hardcoded string;
+ *   - the greeting says so when no model is bound, since a v2 agent can exist
+ *     without a runtime and would otherwise appear to be ignoring the user.
  */
 
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const STATUS_TEXT = {
+  active: "var(--success)",
+  idle: "var(--muted-foreground)",
+  error: "var(--destructive)",
+  disabled: "var(--muted-foreground)",
+};
 
-/** Compose a reply that depends on how this agent is actually set up. */
-function replyFor(agent, prompt) {
-  const lines = [];
+export default function ChatPanel({ agent, onClose, isExpanded = false, onToggleExpand }) {
+  const statusCfg = STATUS[agent?.status] ?? STATUS.idle;
 
-  if (agent.knowledge.length > 0) {
-    lines.push(
-      `Looking at ${agent.knowledge.join(" and ")}, here is what applies to “${prompt.slice(0, 60)}”:`,
-      "",
-      "The relevant section says requests should go through your manager first, and that anything over two weeks needs a second approval.",
-      "",
-      `— cited from ${agent.knowledge[0]}`,
-    );
-  } else {
-    lines.push(
-      `I can answer from what I know generally, but nothing of yours is attached to me — so treat this as a starting point rather than your policy.`,
-      "",
-      "Attach a source and I will quote it instead.",
-    );
-  }
-
-  if (agent.tools === "scoped" && agent.granted.length > 0) {
-    lines.push("", `_Used ${agent.granted.slice(0, 2).join(", ")}._`);
-  } else if (agent.tools === "open") {
-    lines.push("", "_No tool needed for this one._");
-  }
-
-  return lines.join("\n");
-}
-
-export default function ChatPanel({ agent, onClose, onSetupRuntime }) {
-  const [messages, setMessages] = useState([]);
+  // v1 seeds the greeting from an effect keyed on agent.id. The page mounts
+  // this panel with key={agent.id}, so it already remounts per agent — which
+  // makes initial state the same thing without the cascading render.
+  const [messages, setMessages] = useState(() => {
+    if (!agent) return [];
+    const greeting = agent.runtime
+      ? `Hi! I'm **${agent.name}**.\n${agent.description}\n\nHow can I help you today?`
+      : `Hi! I'm **${agent.name}**.\n${agent.description}\n\nNo model is bound to me yet, so I can't answer here — I still install and run on my targets. Bind a model from the agent's Settings and we can talk.`;
+    return [{ role: "ai", text: greeting }];
+  });
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const endRef = useRef(null);
+  const [loading, setLoading] = useState(false);
+  const scrollRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // Focus and scroll are DOM synchronisation, which is what effects are for.
+  useEffect(() => {
+    const t = setTimeout(() => inputRef.current?.focus(), 50);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, busy]);
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages, loading]);
 
   if (!agent) return null;
 
-  const send = async () => {
-    const text = input.trim();
-    if (!text || busy) return;
+  const send = () => {
+    const q = input.trim();
+    if (!q) return;
+    setMessages((m) => [...m, { role: "user", text: q }]);
     setInput("");
-    setMessages((m) => [...m, { role: "user", text }]);
-    setBusy(true);
-
-    // Streamed a word at a time so the panel reads like the real thing.
-    await wait(420);
-    const full = replyFor(agent, text);
-    const words = full.split(" ");
-    setMessages((m) => [...m, { role: "agent", text: "" }]);
-    for (let i = 0; i < words.length; i += 3) {
-      await wait(28);
-      const chunk = words.slice(0, i + 3).join(" ");
-      setMessages((m) => [...m.slice(0, -1), { role: "agent", text: chunk }]);
-    }
-    setBusy(false);
+    setLoading(true);
+    setTimeout(() => {
+      setMessages((m) => [
+        ...m,
+        {
+          role: "ai",
+          text: agent.knowledge.length
+            ? `Looking at ${agent.knowledge.join(" and ")}: this is a demo — in production I'd retrieve the relevant section and quote it back with a citation.`
+            : `Thanks for your message! As **${agent.name}** I'm processing your request. This is a demo — in production I'd connect to the live agent backend.`,
+        },
+      ]);
+      setLoading(false);
+    }, 900);
   };
 
-  const starters = agent.knowledge.length
-    ? [`What does ${agent.knowledge[0]} say about time off?`, "Summarise the approval process"]
-    : ["What can you help with?", "What do you need from me to be useful?"];
-
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-label={`Chat with ${agent.name}`}>
-      <button
-        type="button"
-        aria-label="Close chat"
-        onClick={onClose}
-        className="flex-1 bg-overlay backdrop-blur-[1px]"
-      />
-
-      <aside className="flex h-full w-full max-w-md flex-col border-l border-border bg-card shadow-xl">
-        <header className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
-          <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-foreground">{agent.name}</h2>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-              {agent.runtime && (
-                <span className="inline-flex items-center gap-1">
-                  <Cpu className="size-3" aria-hidden />
-                  {agent.runtime.model}
-                </span>
-              )}
-              {agent.knowledge.length > 0 && (
-                <span className="inline-flex items-center gap-1">
-                  <Database className="size-3" aria-hidden />
-                  {agent.knowledge.length}
-                </span>
-              )}
-              {agent.tools !== "none" && (
-                <span className="inline-flex items-center gap-1">
-                  <Wrench className="size-3" aria-hidden />
-                  {agent.tools === "open" ? "all" : agent.granted.length}
-                </span>
-              )}
-            </div>
+    <motion.div
+      initial={{ width: 0, opacity: 0 }}
+      animate={{ width: isExpanded ? "100%" : 400, opacity: 1 }}
+      exit={{ width: 0, opacity: 0 }}
+      transition={{ duration: 0.22, ease: "easeInOut" }}
+      className={`${isExpanded ? "flex-1 min-w-0" : "flex-shrink-0"} border-l border-border bg-muted flex flex-col overflow-hidden`}
+      style={{ minWidth: 0 }}
+    >
+      {/* Header */}
+      <div className="flex h-16 flex-shrink-0 items-center gap-2 border-b border-border bg-card px-4">
+        <div className="bg-muted border border-border rounded-[4px] size-9 flex items-center justify-center overflow-hidden flex-shrink-0">
+          <Bot size={18} className="text-muted-foreground" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-foreground truncate">{agent.name}</p>
+          <div className="flex items-center gap-1.5">
+            <span
+              className="size-1.5 rounded-full flex-shrink-0"
+              style={{ backgroundColor: statusCfg.dot }}
+            />
+            <span
+              className="text-xs capitalize"
+              style={{ color: STATUS_TEXT[agent.status] ?? "var(--muted-foreground)" }}
+            >
+              {statusCfg.label}
+            </span>
           </div>
-          <Button type="button" variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close">
-            <X className="size-4" aria-hidden />
-          </Button>
-        </header>
-
-        {/* The half that has to exist before a chat can happen at all. */}
-        {!agent.runtime ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
-            <Cpu className="size-6 text-muted-foreground" aria-hidden />
-            <p className="text-sm font-medium text-foreground">No model bound</p>
-            <p className="text-xs leading-5 text-muted-foreground">
-              This agent installs and runs on its targets, but there is nothing to chat with here until
-              a model is bound.
-            </p>
-            <Button type="button" size="sm" onClick={onSetupRuntime}>
-              Set up a runtime
-            </Button>
-          </div>
-        ) : (
-          <>
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
-              {messages.length === 0 && (
-                <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground">Try:</p>
-                  {starters.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => setInput(s)}
-                      className="block w-full rounded-lg border border-border px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {messages.map((m, i) => (
-                <div
-                  key={i}
-                  className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}
-                >
-                  <div
-                    className={cn(
-                      "max-w-[85%] rounded-xl px-3 py-2 text-xs leading-5 whitespace-pre-wrap",
-                      m.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "border border-border bg-muted/40 text-foreground",
-                    )}
-                  >
-                    {m.text}
-                    {m.role === "agent" && busy && i === messages.length - 1 && (
-                      <span className="ml-0.5 inline-block h-3 w-1 animate-pulse bg-foreground align-middle" />
-                    )}
-                  </div>
-                </div>
-              ))}
-              <div ref={endRef} />
-            </div>
-
-            <div className="border-t border-border p-3">
-              <div className="flex items-end gap-2">
-                <Textarea
-                  rows={1}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      send();
-                    }
-                  }}
-                  placeholder={`Ask ${agent.name}…`}
-                  className="max-h-28 min-h-9 resize-none text-sm"
-                />
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  onClick={send}
-                  disabled={!input.trim() || busy}
-                  aria-label="Send"
-                >
-                  <Send className="size-3.5" aria-hidden />
-                </Button>
-              </div>
-              {agent.knowledge.length === 0 && (
-                <p className="mt-1.5 text-[11px] text-muted-foreground">
-                  Nothing attached — answers come from the model alone.
-                </p>
-              )}
-            </div>
-          </>
+        </div>
+        {onToggleExpand && (
+          <button
+            aria-label={isExpanded ? "Restore panel size" : "Maximize"}
+            onClick={onToggleExpand}
+            className="flex size-7 items-center justify-center rounded-[6px] text-muted-foreground hover:bg-muted transition-colors"
+          >
+            {isExpanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+          </button>
         )}
-      </aside>
-    </div>
+        <button
+          aria-label="Close"
+          onClick={onClose}
+          className="flex size-7 items-center justify-center rounded-[6px] text-muted-foreground hover:bg-muted transition-colors"
+        >
+          <X size={15} />
+        </button>
+      </div>
+
+      {/* Messages */}
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3 px-4 py-4">
+        <div className="flex-1" />
+
+        {messages.map((msg, i) => {
+          if (msg.role === "user")
+            return (
+              <div key={i} className="flex justify-end w-full flex-shrink-0">
+                <div className="max-w-[80%] rounded-[12px] rounded-tr-[4px] border border-primary/30 bg-primary/10 px-4 py-3">
+                  <p className="text-sm leading-5 text-foreground whitespace-pre-line">{msg.text}</p>
+                </div>
+              </div>
+            );
+          return (
+            <div key={i} className="flex flex-col items-start w-full flex-shrink-0">
+              <div className="w-full rounded-[12px] rounded-tl-[4px] bg-card border border-border px-4 py-3">
+                <p className="text-sm leading-6 text-foreground whitespace-pre-line">
+                  {msg.text.replace(/\*\*(.*?)\*\*/g, "$1")}
+                </p>
+              </div>
+              <div className="flex items-center mt-1">
+                {[
+                  { icon: <Copy size={14} />, label: "Copy" },
+                  { icon: <ThumbsUp size={14} />, label: "Good response" },
+                  { icon: <ThumbsDown size={14} />, label: "Bad response" },
+                  { icon: <RotateCcw size={14} />, label: "Regenerate" },
+                ].map((btn) => (
+                  <button
+                    key={btn.label}
+                    aria-label={btn.label}
+                    title={btn.label}
+                    className="flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-muted-foreground transition-colors"
+                  >
+                    {btn.icon}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+
+        {loading && (
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex gap-1 px-4 py-3 rounded-[12px] rounded-tl-[4px] bg-card border border-border">
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className="size-1.5 rounded-full bg-muted animate-bounce"
+                  style={{ animationDelay: `${i * 150}ms` }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Prompt box */}
+      <div className="px-4 pb-4 pt-2 flex-shrink-0">
+        <div className="rounded-[12px] bg-card shadow-[0_4px_24px_0_rgba(37,99,235,0.10)] border border-border overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
+              placeholder={`Ask ${agent.name} anything…`}
+              className="flex-1 bg-transparent text-sm leading-5 text-foreground placeholder:text-muted-foreground outline-none"
+            />
+            <button
+              onClick={send}
+              disabled={!input.trim() || loading}
+              aria-label="Send message"
+              className={`flex items-center justify-center size-8 rounded-full border flex-shrink-0 transition-colors ${
+                input.trim() && !loading
+                  ? "bg-primary border-border text-primary-foreground hover:bg-primary"
+                  : "bg-card border-border text-foreground cursor-not-allowed"
+              }`}
+            >
+              <Send size={14} />
+            </button>
+          </div>
+          <div className="flex items-center gap-1 px-3 py-2">
+            <button className="flex items-center gap-1.5 h-7 rounded-[6px] px-2 text-xs text-muted-foreground hover:bg-muted transition-colors">
+              <Paperclip size={12} /> Attach
+            </button>
+            <div className="h-4 w-px bg-border mx-1" />
+            <span className="text-xs text-muted-foreground">
+              {agent.runtime?.model ?? "No model"}
+            </span>
+          </div>
+        </div>
+      </div>
+    </motion.div>
   );
 }

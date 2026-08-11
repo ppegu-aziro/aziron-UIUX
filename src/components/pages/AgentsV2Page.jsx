@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AnimatePresence } from "motion/react";
 import { Boxes, Plus, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,10 +21,10 @@ import { AgentsV2Provider, useAgentsV2 } from "@/context/AgentsV2Context";
  *
  * One noun ("Agent") absorbing what used to be two overlapping objects.
  *
- * There is no view switcher. Distribute and the concept explainer were tabs in
- * the first pass and read as top-level destinations, which they are not — you
- * cannot distribute "agents", only a particular agent. Both are now reached
- * from the agent that owns them, and the list is simply the page.
+ * The chat panel is an inline sibling of the content column, exactly as in the
+ * live Agents page: it animates in at 400px, expands to full width, and hides
+ * the main column when it does. It is not an overlay — that was a deviation,
+ * and chat is the one surface here that should feel identical to today's.
  */
 
 function AgentsV2Inner({ onNavigate }) {
@@ -31,8 +32,10 @@ function AgentsV2Inner({ onNavigate }) {
   const [view, setView] = useState("catalog");
   const [agentId, setAgentId] = useState(null);
   const [chatId, setChatId] = useState(null);
+  const [chatExpanded, setChatExpanded] = useState(false);
 
   const chatAgent = chatId ? get(chatId) : null;
+  const hideMainColumn = Boolean(chatAgent) && chatExpanded;
 
   const openEditor = (a) => {
     setAgentId(a?.id ?? a);
@@ -44,93 +47,104 @@ function AgentsV2Inner({ onNavigate }) {
     setView("catalog");
   };
 
-  const title =
-    view === "create" ? "New agent" : view === "distribute" ? "Distribute" : "Agents";
+  const closeChat = () => {
+    setChatId(null);
+    setChatExpanded(false);
+  };
+
+  const title = view === "create" ? "New agent" : view === "distribute" ? "Distribute" : "Agents";
 
   return (
     <main className="app-page-main flex h-full min-h-0 w-full flex-1 overflow-hidden bg-background">
       <Sidebar activePage="agents-v2" onNavigate={onNavigate} />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <AppHeader onNavigate={onNavigate} />
+      <div className="flex h-full min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div
+          className={
+            hideMainColumn
+              ? "hidden"
+              : "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+          }
+        >
+          <AppHeader onNavigate={onNavigate} />
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="flex flex-col gap-4 px-6 py-4">
-            <PageHeader
-              title={title}
-              description={
-                view === "catalog"
-                  ? "One agent is a folder of instructions. Give it a model and it runs here; release it and it runs anywhere."
-                  : undefined
-              }
-            >
-              {view === "catalog" && (
-                <>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      reset();
-                      backToCatalog();
-                      toast.message("Prototype reset to its seed data");
-                    }}
-                  >
-                    <RotateCcw className="size-3.5" aria-hidden />
-                    Reset
-                  </Button>
-                  <Badge variant="outline" className="gap-1">
-                    <Boxes className="size-3" aria-hidden />
-                    concept · v2
-                  </Badge>
-                  {/* Create lives in the header, where every other list page
-                      in this product puts its primary action. */}
-                  <Button type="button" size="sm" onClick={() => setView("create")}>
-                    <Plus className="size-3.5" aria-hidden />
-                    New agent
-                  </Button>
-                </>
-              )}
-            </PageHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="flex flex-col gap-4 px-6 py-4">
+              <PageHeader
+                title={title}
+                description={
+                  view === "catalog"
+                    ? "One agent is a folder of instructions. Give it a model and it runs here; release it and it runs anywhere."
+                    : undefined
+                }
+              >
+                {view === "catalog" && (
+                  <>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        reset();
+                        backToCatalog();
+                        closeChat();
+                        toast.message("Prototype reset to its seed data");
+                      }}
+                    >
+                      <RotateCcw className="size-3.5" aria-hidden />
+                      Reset
+                    </Button>
+                    <Badge variant="outline" className="gap-1">
+                      <Boxes className="size-3" aria-hidden />
+                      concept · v2
+                    </Badge>
+                    <Button type="button" size="sm" onClick={() => setView("create")}>
+                      <Plus className="size-3.5" aria-hidden />
+                      New agent
+                    </Button>
+                  </>
+                )}
+              </PageHeader>
 
-            <div className="pb-12">
-              {view === "catalog" && (
-                <CatalogView onChat={(a) => setChatId(a.id)} onEdit={openEditor} />
-              )}
+              <div className="pb-12">
+                {view === "catalog" && (
+                  <CatalogView onChat={(a) => setChatId(a.id)} onEdit={openEditor} />
+                )}
 
-              {view === "agent" && agentId && (
-                <AgentView
-                  key={agentId}
-                  agentId={agentId}
-                  onBack={backToCatalog}
-                  onDistribute={() => setView("distribute")}
-                />
-              )}
+                {view === "agent" && agentId && (
+                  <AgentView
+                    key={agentId}
+                    agentId={agentId}
+                    onBack={backToCatalog}
+                    onDistribute={() => setView("distribute")}
+                    onChat={(a) => setChatId(a.id)}
+                  />
+                )}
 
-              {view === "create" && (
-                <CreateView onBack={backToCatalog} onCreated={(record) => openEditor(record)} />
-              )}
+                {view === "create" && (
+                  <CreateView onBack={backToCatalog} onCreated={(record) => openEditor(record)} />
+                )}
 
-              {view === "distribute" && agentId && (
-                <DistributeView agentId={agentId} onBack={() => setView("agent")} />
-              )}
+                {view === "distribute" && agentId && (
+                  <DistributeView agentId={agentId} onBack={() => setView("agent")} />
+                )}
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Chat opens from a card click, the way it does in the live page. */}
-      {chatAgent && (
-        <ChatPanel
-          agent={chatAgent}
-          onClose={() => setChatId(null)}
-          onSetupRuntime={() => {
-            const id = chatAgent.id;
-            setChatId(null);
-            openEditor(id);
-          }}
-        />
-      )}
+        <AnimatePresence>
+          {chatAgent && (
+            <ChatPanel
+              key={chatAgent.id}
+              agent={chatAgent}
+              onClose={closeChat}
+              isExpanded={chatExpanded}
+              onToggleExpand={() => setChatExpanded((v) => !v)}
+            />
+          )}
+        </AnimatePresence>
+      </div>
     </main>
   );
 }
