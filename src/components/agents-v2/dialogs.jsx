@@ -438,11 +438,20 @@ export function ReleaseDialog({ agent, open, onOpenChange }) {
             <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-foreground">
               <Boxes className="size-3 text-muted-foreground" aria-hidden />
               Ships in v{next}
+              <span className="font-normal text-muted-foreground">
+                · {(agent?.files ?? []).length} file
+                {(agent?.files ?? []).length === 1 ? "" : "s"}
+              </span>
             </p>
             <div className="flex flex-wrap gap-1">
+              {/* files are {path, content} — rendering the object itself is
+                  what took this dialog down. */}
               {(agent?.files ?? []).map((f) => (
-                <span key={f} className="rounded bg-card px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                  {f}
+                <span
+                  key={f.path}
+                  className="rounded bg-card px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+                >
+                  {f.path}
                 </span>
               ))}
             </div>
