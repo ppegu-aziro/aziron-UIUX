@@ -110,7 +110,7 @@ const TABS = [
   { id: "settings", label: "Settings", icon: Wrench },
 ];
 
-export default function AgentView({ agentId, onBack, onDistribute, onChat, onAuthor }) {
+export default function AgentView({ agentId, onBack, onDistribute, onChat, onGenerate }) {
   const { get, patch, fork, saveFiles, addFile, addFolder, renameNode, deleteNode, duplicateNode, moveNode } =
     useAgentsV2();
   const agent = get(agentId);
@@ -204,15 +204,26 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onAut
             <ArrowLeft className="size-4" aria-hidden />
           </Button>
           <div className="min-w-0">
-            <h2 className="truncate text-xl font-semibold tracking-tight text-foreground">{agent.name}</h2>
-            <p className="mt-0.5 font-mono text-xs text-muted-foreground">{agent.slug}</p>
+            {/* The heading reflects what has been typed; when nothing has,
+                it says so rather than standing in a name of its own. */}
+            <h2
+              className={cn(
+                "truncate text-xl font-semibold tracking-tight",
+                draft.name.trim() ? "text-foreground" : "text-muted-foreground italic",
+              )}
+            >
+              {draft.name.trim() || "Name this agent"}
+            </h2>
+            <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+              {agent.slug || "—"}
+            </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => onAuthor?.(agent)}>
+          <Button type="button" variant="outline" size="sm" onClick={() => onGenerate?.(agent)}>
             <Sparkles className="size-3.5" aria-hidden />
-            Author
+            Generate
           </Button>
           <Button type="button" variant="outline" size="sm" onClick={() => onChat?.(agent)}>
             <MessageSquare className="size-3.5" aria-hidden />
@@ -299,6 +310,8 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onAut
                 </label>
                 <Input
                   id="ag-name"
+                  autoFocus={!agent.name}
+                  placeholder="What is this agent called?"
                   value={draft.name}
                   onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
                   className="text-sm"

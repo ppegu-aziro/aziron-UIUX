@@ -5,16 +5,17 @@ import { FileText, Maximize2, Minimize2, Send, Sparkles, X } from "lucide-react"
 import { useAgentsV2 } from "@/context/AgentsV2Context";
 
 /**
- * Authoring assistant.
+ * Agent Generator.
  *
- * Generation is not a separate screen you leave — it is a conversation beside
- * the editor. You ask for something, the files change in place, you edit them
- * by hand, you ask for the next thing. That loop is the whole point: a
- * one-shot generator produces a draft you then have to fix somewhere else,
- * which is where the old two-path create flow kept sending people.
+ * Opt-in, never automatic. The editor is what opens; this arrives only when
+ * asked for. Writing by hand is the baseline and generating is the assist —
+ * a panel that opens itself reverses that and makes typing feel like the
+ * fallback.
  *
- * Every turn writes through the same store the editor reads, so what it
- * produces is immediately and equally editable. Nothing it makes is special.
+ * Once open it is a conversation beside the editor, not a screen you leave:
+ * ask for something, the files change in place, edit them by hand, ask for
+ * the next thing. Every turn writes through the same store the editor reads,
+ * so what it produces is immediately and equally editable.
  */
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -128,7 +129,7 @@ function plan(prompt, agent) {
   };
 }
 
-export default function AuthorPanel({ agent, onClose, isExpanded = false, onToggleExpand }) {
+export default function GeneratorPanel({ agent, onClose, isExpanded = false, onToggleExpand }) {
   const { patch, addFile, saveFiles } = useAgentsV2();
   const [messages, setMessages] = useState(() => [
     {
@@ -193,8 +194,8 @@ export default function AuthorPanel({ agent, onClose, isExpanded = false, onTogg
           <Sparkles size={16} className="text-primary" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-foreground">Author</p>
-          <p className="truncate text-xs text-muted-foreground">Writes into this agent's files</p>
+          <p className="truncate text-sm font-semibold text-foreground">Agent Generator</p>
+          <p className="truncate text-xs text-muted-foreground">Writes into this agent&apos;s files</p>
         </div>
         {onToggleExpand && (
           <button

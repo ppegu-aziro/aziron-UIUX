@@ -62,16 +62,20 @@ const GRADIENTS = [
   "from-rose-500 to-pink-500",
 ];
 
+// Seeded from the name; an unnamed draft would otherwise reduce an empty
+// array with no initial value and throw.
 const gradientFor = (name) =>
-  GRADIENTS[[...name].reduce((a, c) => a + c.charCodeAt(0), 0) % GRADIENTS.length];
+  GRADIENTS[[...(name || "?")].reduce((a, c) => a + c.charCodeAt(0), 0) % GRADIENTS.length];
 
 function Avatar({ name, size = "lg" }) {
-  const initials = name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase();
+  const initials =
+    (name || "")
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0])
+      .join("")
+      .toUpperCase() || "—";
   return (
     <span
       className={cn(
@@ -125,13 +129,19 @@ function AgentMenu({ agent, onChat, onEdit, onFork, onPublish, onDelete }) {
             variant="ghost"
             size="icon-sm"
             onClick={(e) => e.stopPropagation()}
-            aria-label={`Actions for ${agent.name}`}
+            aria-label={`Actions for ${agent.name || "unnamed agent"}`}
           />
         }
       >
         <MoreVertical className="size-3.5" aria-hidden />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-44">
+      {/*
+        The menu renders inside the card, and the card's own onClick opens
+        chat. Without stopping propagation here every menu item ALSO fired
+        chat — Edit navigated and was immediately given a chat panel back,
+        which looked like the panel refusing to close.
+      */}
+      <DropdownMenuContent align="end" className="w-44" onClick={(e) => e.stopPropagation()}>
         <DropdownMenuItem onClick={() => onChat(agent)}>
           <MessageSquare className="size-3.5" aria-hidden />
           Chat
@@ -163,7 +173,7 @@ function AgentCard({ agent, actions }) {
     <div
       role="button"
       tabIndex={0}
-      aria-label={`Chat with ${agent.name}`}
+      aria-label={`Chat with ${agent.name || "unnamed agent"}`}
       onClick={() => actions.onChat(agent)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -178,7 +188,9 @@ function AgentCard({ agent, actions }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <StatusDot status={agent.status} />
-            <h3 className="truncate text-sm font-semibold text-foreground">{agent.name}</h3>
+            <h3 className={cn("truncate text-sm font-semibold", agent.name ? "text-foreground" : "text-muted-foreground italic")}>
+              {agent.name || "Not named yet"}
+            </h3>
           </div>
           <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{agent.slug}</p>
         </div>
@@ -220,7 +232,7 @@ function AgentRow({ agent, actions, zebra }) {
     <div
       role="button"
       tabIndex={0}
-      aria-label={`Chat with ${agent.name}`}
+      aria-label={`Chat with ${agent.name || "unnamed agent"}`}
       onClick={() => actions.onChat(agent)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -237,7 +249,9 @@ function AgentRow({ agent, actions, zebra }) {
       <div className="min-w-0 flex-[2]">
         <div className="flex items-center gap-1.5">
           <StatusDot status={agent.status} />
-          <span className="truncate text-xs font-medium text-foreground">{agent.name}</span>
+          <span className={cn("truncate text-xs font-medium", agent.name ? "text-foreground" : "text-muted-foreground italic")}>
+            {agent.name || "Not named yet"}
+          </span>
         </div>
         <p className="truncate text-[11px] text-muted-foreground">{agent.description}</p>
       </div>

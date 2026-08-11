@@ -13,30 +13,31 @@ import CatalogView from "@/components/agents-v2/CatalogView";
 import AgentView from "@/components/agents-v2/AgentView";
 import DistributeView from "@/components/agents-v2/DistributeView";
 import ChatPanel from "@/components/agents-v2/ChatPanel";
-import AuthorPanel from "@/components/agents-v2/AuthorPanel";
+import GeneratorPanel from "@/components/agents-v2/GeneratorPanel";
 import { AgentsV2Provider, useAgentsV2 } from "@/context/AgentsV2Context";
 
 /**
  * Agents v2 — the unified concept prototype.
  *
  * There is no separate create screen. "New agent" makes an empty draft and
- * opens the editor with the Author panel beside it, so generating and editing
- * are the same view: ask for something, watch the files change, edit them by
- * hand, ask for the next thing.
+ * opens the editor, ready to type in. The Agent Generator is a sibling panel
+ * you open with Generate when you want it — never opened for you, because
+ * writing by hand is the baseline and generating is the assist.
  *
- * A wizard that generates and then hands you off to an editor makes the
- * generated result feel finished and the editing feel like repair. Putting
- * them side by side makes iteration the default.
+ * Once open it sits beside the editor rather than replacing it, so generating
+ * and editing are the same view: ask, watch the files change, edit by hand,
+ * ask again. A wizard that generates and then hands you off to an editor makes
+ * the generated result feel finished and the editing feel like repair.
  *
- * One side panel at a time — Author writes files, Chat talks to the agent.
+ * One side panel at a time — Generator writes files, Chat talks to the agent.
  * Both are inline siblings of the content column, as in the live page.
  */
 
 function AgentsV2Inner({ onNavigate }) {
-  const { get, create, reset } = useAgentsV2();
+  const { get, create, remove, reset } = useAgentsV2();
   const [view, setView] = useState("catalog");
   const [agentId, setAgentId] = useState(null);
-  const [panel, setPanel] = useState(null); // { type: "chat" | "author", id }
+  const [panel, setPanel] = useState(null); // { type: "chat" | "generate", id }
   const [expanded, setExpanded] = useState(false);
 
   const panelAgent = panel ? get(panel.id) : null;
@@ -45,6 +46,10 @@ function AgentsV2Inner({ onNavigate }) {
   const openEditor = (a) => {
     setAgentId(a?.id ?? a);
     setView("agent");
+    // Arrive on a clean editor. A panel left open from the previous action is
+    // leftover context, and the generator in particular must be opt-in.
+    setPanel(null);
+    setExpanded(false);
   };
 
   const backToCatalog = () => {
@@ -62,16 +67,41 @@ function AgentsV2Inner({ onNavigate }) {
     setExpanded(false);
   };
 
-  /** New agent: an empty draft, opened in the editor with Author beside it. */
+  /**
+   * New agent: an empty, unnamed draft, opened in the editor ready to type in.
+   *
+   * Nothing is named for you. A placeholder name like "Untitled agent" is a
+   * decision the product made on the user's behalf, and it survives into the
+   * catalog, the slug and the release unless someone remembers to change it.
+   * The field starts empty and says what it wants instead.
+   *
+   * The generator is not opened either. Writing by hand is the baseline and
+   * generating is the assist; auto-opening it reverses that.
+   */
   const newAgent = () => {
     const record = create({
-      name: "Untitled agent",
+      name: "",
       description: "",
       instructions: "",
       files: [{ path: "AGENT.md", content: "" }],
     });
     openEditor(record);
-    openPanel("author", record);
+  };
+
+  /**
+   * Leaving the editor discards a draft nobody committed to: no name and no
+   * content. Keeping it would put an anonymous row in the catalog that the
+   * user never asked to create.
+   */
+  const leaveEditor = () => {
+    const a = agentId ? get(agentId) : null;
+    const untouched =
+      a && !a.name.trim() && a.files.every((f) => !f.content.trim()) && !a.description.trim();
+    if (untouched) {
+      remove(a.id);
+      toast.message("Empty draft discarded");
+    }
+    backToCatalog();
   };
 
   const title = view === "distribute" ? "Distribute" : "Agents";
@@ -133,10 +163,10 @@ function AgentsV2Inner({ onNavigate }) {
                   <AgentView
                     key={agentId}
                     agentId={agentId}
-                    onBack={backToCatalog}
+                    onBack={leaveEditor}
                     onDistribute={() => setView("distribute")}
                     onChat={(a) => openPanel("chat", a)}
-                    onAuthor={(a) => openPanel("author", a)}
+                    onGenerate={(a) => openPanel("generate", a)}
                   />
                 )}
 
@@ -158,9 +188,9 @@ function AgentsV2Inner({ onNavigate }) {
               onToggleExpand={() => setExpanded((v) => !v)}
             />
           )}
-          {panelAgent && panel.type === "author" && (
-            <AuthorPanel
-              key={`author-${panelAgent.id}`}
+          {panelAgent && panel.type === "generate" && (
+            <GeneratorPanel
+              key={`generate-${panelAgent.id}`}
               agent={panelAgent}
               onClose={closePanel}
               isExpanded={expanded}
