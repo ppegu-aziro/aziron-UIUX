@@ -7,7 +7,6 @@ import {
   FileCode,
   GitFork,
   History,
-  Loader2,
   MessageSquare,
   Pencil,
   Rocket,
@@ -17,7 +16,6 @@ import {
   SlidersHorizontal,
   Upload,
   Sparkles,
-  Wand2,
   Wrench,
 } from "lucide-react";
 import { Eye, PenLine } from "lucide-react";
@@ -46,7 +44,6 @@ import MarkdownPreview from "./MarkdownPreview";
  */
 
 const RAIL = "w-full shrink-0 lg:w-[290px]";
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function RailSection({ icon: Icon, title, action, children, dashed }) {
   return (
@@ -120,7 +117,6 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onAut
 
   const [tab, setTab] = useState("instructions");
   const [dialog, setDialog] = useState(null);
-  const [busy, setBusy] = useState("");
   // Edit vs Preview, the way a markdown editor does it. Kept per-screen rather
   // than per-file so toggling does not reset every time you pick a file.
   const [mode, setMode] = useState("edit");
@@ -310,36 +306,9 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onAut
               </div>
 
               <div>
-                <div className="mb-1.5 flex items-center justify-between gap-2">
-                  <label htmlFor="ag-desc" className="text-xs font-medium text-foreground">
-                    Description
-                  </label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="xs"
-                    disabled={busy === "desc"}
-                    onClick={async () => {
-                      setBusy("desc");
-                      await sleep(700);
-                      setDraft((d) => ({
-                        ...d,
-                        description: `${d.name}. ${d.description || "Cites the source it used"}, and says plainly when something is not covered.`
-                          .replace(/\s+/g, " ")
-                          .slice(0, 220),
-                      }));
-                      setBusy("");
-                      toast.success("Description drafted");
-                    }}
-                  >
-                    {busy === "desc" ? (
-                      <Loader2 className="size-3 animate-spin" aria-hidden />
-                    ) : (
-                      <Wand2 className="size-3" aria-hidden />
-                    )}
-                    Generate
-                  </Button>
-                </div>
+                <label htmlFor="ag-desc" className="mb-1.5 block text-xs font-medium text-foreground">
+                  Description
+                </label>
                 <Textarea
                   id="ag-desc"
                   rows={2}
