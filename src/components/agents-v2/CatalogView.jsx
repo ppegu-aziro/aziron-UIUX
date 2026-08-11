@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { AGENTS_V2, FACET_FILTERS, openToolCount } from "@/data/agentsV2";
+import { FACET_FILTERS, openToolCount } from "@/data/agentsV2";
+import { useAgentsV2 } from "@/context/AgentsV2Context";
 import { FacetChips } from "./FacetChips";
 
 /**
@@ -22,6 +23,9 @@ function AgentCard({ agent, onOpen }) {
     <button
       type="button"
       onClick={() => onOpen(agent)}
+      // Without this the accessible name is the whole card read as one run-on
+      // string — every chip, the owner and the install count included.
+      aria-label={`Open ${agent.name}`}
       className={cn(
         "group flex h-full flex-col rounded-xl border border-border bg-card p-4 text-left transition-all",
         "hover:border-primary/40 hover:shadow-md focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
@@ -60,16 +64,18 @@ function AgentCard({ agent, onOpen }) {
 }
 
 export default function CatalogView({ onOpen, onCreate }) {
+  const { agents } = useAgentsV2();
   const [facet, setFacet] = useState("all");
   const [query, setQuery] = useState("");
   const [openOnly, setOpenOnly] = useState(false);
 
-  const openCount = openToolCount();
+  const openCount = openToolCount(agents);
 
   const filtered = useMemo(() => {
     const test = FACET_FILTERS.find((f) => f.id === facet)?.test ?? (() => true);
     const q = query.trim().toLowerCase();
-    return AGENTS_V2.filter(test)
+    return agents
+      .filter(test)
       .filter((a) => (openOnly ? a.tools === "open" : true))
       .filter(
         (a) =>
@@ -78,7 +84,7 @@ export default function CatalogView({ onOpen, onCreate }) {
           a.description.toLowerCase().includes(q) ||
           a.category.toLowerCase().includes(q),
       );
-  }, [facet, query, openOnly]);
+  }, [agents, facet, query, openOnly]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -149,7 +155,7 @@ export default function CatalogView({ onOpen, onCreate }) {
 
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <SlidersHorizontal className="size-3" aria-hidden />
-        Showing {filtered.length} of {AGENTS_V2.length}
+        Showing {filtered.length} of {agents.length}
         {facet !== "all" && (
           <Badge variant="outline" className="ml-1">
             {FACET_FILTERS.find((f) => f.id === facet)?.label}

@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Cpu, Database, FileText, Plus, Sparkles } from "lucide-react";
 
+import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { KNOWLEDGE_SOURCES } from "@/data/agentsV2";
+import { useAgentsV2 } from "@/context/AgentsV2Context";
 
 /**
  * Creating an agent.
@@ -21,11 +24,7 @@ import { cn } from "@/lib/utils";
  * on a later screen, because that is the job, not a refinement of it.
  */
 
-const SOURCES = [
-  { id: "handbook", name: "Employee Handbook 2026", meta: "PDF · 84 pages" },
-  { id: "runbooks", name: "Runbooks", meta: "Hub · 213 docs" },
-  { id: "wiki", name: "Engineering Wiki", meta: "Hub · 1,204 docs" },
-];
+const SOURCES = KNOWLEDGE_SOURCES.slice(0, 4);
 
 const EXAMPLES = [
   "Answer HR policy questions from our handbook",
@@ -33,15 +32,53 @@ const EXAMPLES = [
   "Provision EKS clusters with eksctl",
 ];
 
+// Cutting at a fixed word count leaves danglers — "Answer Payroll Questions
+// From", "Triage Findings And File". Cutting at the first clause boundary
+// instead keeps the part that actually names the job.
+const BREAK = /^(from|with|and|or|that|then|using|based|so|but|plus|into|against|across)$/i;
+
+/** Title-case the opening clause of the intent so the agent gets a real name. */
+function nameFrom(intent) {
+  const words = intent.trim().replace(/[.!?,;:].*$/s, "").split(/\s+/).filter(Boolean);
+  const cut = words.findIndex((w, i) => i >= 2 && BREAK.test(w));
+  const kept = (cut > 0 ? words.slice(0, cut) : words).slice(0, 5);
+  const name = kept
+    // Capitalise across hyphens too, so "static-analysis" does not become
+    // "Static-analysis".
+    .map((w) => w.replace(/(^|-)(\w)/g, (_, sep, ch) => sep + ch.toUpperCase()))
+    .join(" ")
+    .trim();
+  return name || "New Agent";
+}
+
 export default function CreateView({ onBack, onCreated }) {
+  const { create } = useAgentsV2();
   const [intent, setIntent] = useState("");
   const [stage, setStage] = useState("ask");
   const [sources, setSources] = useState([]);
+  const [made, setMade] = useState(null);
 
   const ready = intent.trim().length > 8;
 
   const toggleSource = (id) =>
     setSources((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+
+  /** Commit the agent. Called from both "Continue" and "Not now". */
+  const finish = (withSources) => {
+    const knowledge = withSources
+      ? SOURCES.filter((s) => sources.includes(s.id)).map((s) => s.name)
+      : [];
+    const name = nameFrom(intent);
+    const record = create({
+      name,
+      description: intent.trim(),
+      instructions: [`# ${name}`, "", intent.trim(), ""].join("\n"),
+      knowledge,
+    });
+    setMade(record);
+    setStage("done");
+    toast.success(`${name} created`, { description: "Runs here on Auto. Nothing published." });
+  };
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
@@ -150,10 +187,10 @@ export default function CreateView({ onBack, onCreated }) {
                 </div>
 
                 <div className="mt-3 flex items-center gap-2">
-                  <Button type="button" size="sm" onClick={() => setStage("done")}>
+                  <Button type="button" size="sm" onClick={() => finish(true)}>
                     Continue
                   </Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => setStage("done")}>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => finish(false)}>
                     Not now
                   </Button>
                 </div>
@@ -180,14 +217,32 @@ export default function CreateView({ onBack, onCreated }) {
                 draft
               </Badge>
             </div>
-            <p className="mt-2 text-xs leading-5 text-foreground">{intent}</p>
+            <p className="mt-2 text-sm font-medium text-foreground">{made?.name}</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {made?.description ?? intent}
+            </p>
           </div>
+          {/* The name is derived from what was typed, so say so rather than
+              letting a guessed name look like a decision the product made. */}
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            Name taken from your description — rename it any time in the editor.
+          </p>
+
+          {made?.knowledge?.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {made.knowledge.map((k) => (
+                <Badge key={k} variant="outline">
+                  {k}
+                </Badge>
+              ))}
+            </div>
+          )}
 
           <p className="mt-4 text-xs text-muted-foreground">It already runs here. When you want more:</p>
 
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             {[
-              { icon: Cpu, label: "Change the model", note: "Defaults to Auto" },
+              { icon: Cpu, label: "Change the model", note: `Currently ${made?.runtime?.model ?? "Auto"}` },
               { icon: Plus, label: "Grant tools", note: "None granted yet" },
               { icon: FileText, label: "Add reference files", note: "Split long instructions" },
               { icon: Sparkles, label: "Release it", note: "Install into Claude Code" },
@@ -206,7 +261,7 @@ export default function CreateView({ onBack, onCreated }) {
           </div>
 
           <div className="mt-4 flex gap-2">
-            <Button type="button" size="sm" onClick={onCreated}>
+            <Button type="button" size="sm" onClick={() => onCreated(made)}>
               Open agent
             </Button>
             <Button type="button" size="sm" variant="outline" onClick={onBack}>

@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { TARGETS } from "@/data/agentsV2";
+import { useAgentsV2 } from "@/context/AgentsV2Context";
 
 /**
  * Distribution — the CLI half of the story.
@@ -19,15 +20,19 @@ import { TARGETS } from "@/data/agentsV2";
  * Saying that out loud is cheaper than letting people discover it.
  */
 
-export default function DistributeView({ agent, onBack }) {
-  const [selected, setSelected] = useState(agent?.targets ?? ["claude"]);
+export default function DistributeView({ agentId, onBack }) {
+  const { get, setTargets } = useAgentsV2();
+  const agent = get(agentId);
   const [copied, setCopied] = useState(false);
 
+  const selected = agent?.targets ?? [];
   const slug = agent?.slug ?? "my-agent";
   const command = `aziron agent install ${slug}`;
 
+  // Persisted, not local: a target picked here is the same fact the release
+  // rail and the catalog chip read, so they can never disagree.
   const toggle = (id) =>
-    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+    setTargets(agent.id, selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
 
   const copy = () => {
     navigator.clipboard?.writeText(command);
@@ -72,6 +77,15 @@ export default function DistributeView({ agent, onBack }) {
           ))}
         </div>
       </div>
+
+      {/* A release is what makes any of this real; say so rather than showing
+          an install line that would fail. */}
+      {!agent?.release && (
+        <div className="rounded-lg border border-warning/35 bg-warning/10 px-3 py-2.5 text-xs leading-5 text-foreground">
+          <strong>Not released yet.</strong> Targets can be chosen now, but nothing is installable until
+          this agent has a release — that is what pins the files to a version.
+        </div>
+      )}
 
       {/* Targets */}
       <div className="rounded-xl border border-border bg-card p-4">
@@ -146,16 +160,23 @@ export default function DistributeView({ agent, onBack }) {
 
         <div className="mt-3 rounded-lg border border-border bg-muted/20 p-3">
           <pre className="overflow-x-auto font-mono text-[11px] leading-5 text-muted-foreground">
-{`✓ Installed ${slug} v${agent?.release?.version ?? "1.0.0"}
-${selected
-  .map((id) => {
-    const t = TARGETS.find((x) => x.id === id);
-    return `✓ Deployed to ${t.name} as a ${t.format}`;
-  })
-  .join("\n")}
+{agent?.release
+  ? `✓ Installed ${slug} v${agent.release.version}
+${
+  selected.length
+    ? selected
+        .map((id) => {
+          const t = TARGETS.find((x) => x.id === id);
+          return `✓ Deployed to ${t.name} as a ${t.format}`;
+        })
+        .join("\n")
+    : "○ No targets selected — installed but not deployed"
+}
 
 Preparation precheck:
-  ✓ Ready`}
+  ✓ Ready`
+  : `✗ ${slug} has no release
+  Release it first, then this command installs that version.`}
           </pre>
         </div>
       </div>

@@ -59,6 +59,72 @@ export const CATEGORIES = [
   "Finance",
 ];
 
+/**
+ * Models offered when binding a runtime.
+ *
+ * "Auto" is listed first and deliberately framed as a real choice rather than
+ * a fallback — for most agents it is the correct answer, and making a user
+ * pick a specific model before they know what the agent does is the mistake
+ * the old 4-step wizard made.
+ */
+export const PROVIDERS = [
+  {
+    id: "auto",
+    name: "Automatic",
+    models: [{ id: "Auto", note: "Picks a model per request by complexity" }],
+  },
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    models: [
+      { id: "Claude Opus 4.5", note: "Most capable" },
+      { id: "Claude Sonnet 4.5", note: "Balanced — a good default" },
+      { id: "Claude Haiku 4.5", note: "Fastest, cheapest" },
+    ],
+  },
+  {
+    id: "openai",
+    name: "OpenAI",
+    models: [
+      { id: "GPT-5", note: "Most capable" },
+      { id: "GPT-5 mini", note: "Faster, cheaper" },
+    ],
+  },
+];
+
+/** Tools an agent can be granted, grouped the way the picker shows them. */
+export const TOOL_CATALOG = [
+  {
+    category: "Knowledge",
+    tools: ["vector_search", "storage_browse", "storage_read", "get_file_content"],
+  },
+  { category: "Web", tools: ["web_search", "web_fetch"] },
+  { category: "Code", tools: ["github_issue", "github_pr", "run_command"] },
+  { category: "Cloud", tools: ["aws_ec2", "aws_s3", "k8s_describe"] },
+  { category: "Comms", tools: ["send_email", "slack_post"] },
+];
+
+export const ALL_TOOLS = TOOL_CATALOG.flatMap((c) => c.tools);
+
+export const KNOWLEDGE_SOURCES = [
+  { id: "handbook", name: "Employee Handbook 2026", meta: "PDF · 84 pages" },
+  { id: "benefits", name: "Benefits FAQ", meta: "Doc · 12 pages" },
+  { id: "runbooks", name: "Runbooks", meta: "Hub · 213 docs" },
+  { id: "catalog", name: "Service Catalog", meta: "Hub · 48 services" },
+  { id: "wiki", name: "Engineering Wiki", meta: "Hub · 1,204 docs" },
+  { id: "warehouse", name: "Warehouse: analytics", meta: "Database · 96 tables" },
+  { id: "billing", name: "Billing Exports", meta: "Database · 8 tables" },
+  { id: "supportkb", name: "Support KB", meta: "Hub · 640 articles" },
+];
+
+/** semver bump used by the release dialog. */
+export function bumpVersion(current, kind) {
+  const [maj, min, patch] = (current ?? "0.0.0").split(".").map((n) => parseInt(n, 10) || 0);
+  if (kind === "major") return `${maj + 1}.0.0`;
+  if (kind === "minor") return `${maj}.${min + 1}.0`;
+  return `${maj}.${min}.${patch + 1}`;
+}
+
 /** One agent record. Both halves always present; either may be null. */
 const agent = ({
   id,

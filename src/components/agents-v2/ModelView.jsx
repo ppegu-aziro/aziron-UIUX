@@ -2,7 +2,8 @@ import { ArrowRight, Boxes, Check, Cpu, Minus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { AGENTS_V2, openToolCount, originCounts } from "@/data/agentsV2";
+import { openToolCount, originCounts } from "@/data/agentsV2";
+import { useAgentsV2 } from "@/context/AgentsV2Context";
 
 /**
  * The model, explained.
@@ -44,8 +45,9 @@ const MAPPING = [
 ];
 
 export default function ModelView() {
-  const counts = originCounts();
-  const open = openToolCount();
+  const { agents } = useAgentsV2();
+  const counts = originCounts(agents);
+  const open = openToolCount(agents);
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
@@ -98,7 +100,7 @@ export default function ModelView() {
           </span>
           <span className="rounded-md bg-muted px-2 py-1">{counts.skill} from skills</span>
           <span className="rounded-md bg-muted px-2 py-1">{counts.both} already both</span>
-          <span className="rounded-md bg-muted px-2 py-1">{AGENTS_V2.length} total</span>
+          <span className="rounded-md bg-muted px-2 py-1">{agents.length} total</span>
         </div>
       </div>
 
@@ -121,7 +123,7 @@ export default function ModelView() {
             },
             {
               t: "Nothing surfaces unrestricted tool access",
-              d: `An empty allow-list means every tool. Nothing in the product shows it. ${open} of ${AGENTS_V2.length} agents here are in that state, which is why it is a chip and a filter rather than a report.`,
+              d: `An empty allow-list means every tool. Nothing in the product shows it. ${open} of ${agents.length} agents here are in that state, which is why it is a chip and a filter rather than a report.`,
             },
           ].map((x) => (
             <div key={x.t} className="border-l-2 border-border pl-3">
