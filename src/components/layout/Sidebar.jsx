@@ -6,7 +6,7 @@ import {
   ChevronDown, ChevronsUpDown, Settings, LogOut,
   UserCircle, ShieldCheck, Clock, Building2, Tag, Store, ChevronRight, ClipboardList, Shield,
   Receipt, FileBarChart2, FileText, CreditCard, FolderKanban, CircleDollarSign,
-  BookOpen,
+  BookOpen, Boxes,
 } from "lucide-react";
 import { useAuth, ROLES } from "@/context/AuthContext";
 import { useKnowledgeHubs } from "@/context/KnowledgeHubContext";
@@ -56,6 +56,9 @@ const navGroups = [
     items: [
       { icon: Sparkles, label: "New Chat", page: "new-chat" },
       { icon: Bot,      label: "Agents",   page: "agents"   },
+      // Concept prototype, listed alongside the live page so the two can be
+      // compared directly. Remove this entry when the concept is settled.
+      { icon: Boxes,    label: "Agents v2", page: "agents-v2" },
       { icon: Workflow, label: "Flows",     page: "flows"    },
     ],
   },

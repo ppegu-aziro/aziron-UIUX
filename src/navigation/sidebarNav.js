@@ -8,6 +8,7 @@ export const PRIMARY_SIDEBAR_PAGES = new Set([
   // BUILD
   "new-chat",
   "agents",
+  "agents-v2",
   "flows",
   // PLATFORM
   "knowledge",

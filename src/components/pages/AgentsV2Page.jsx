@@ -49,7 +49,7 @@ export default function AgentsV2Page({ onNavigate }) {
 
   return (
     <main className="app-page-main flex h-full min-h-0 w-full flex-1 overflow-hidden bg-background">
-      <Sidebar activePage="agents" onNavigate={onNavigate} />
+      <Sidebar activePage="agents-v2" onNavigate={onNavigate} />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <AppHeader onNavigate={onNavigate} />
