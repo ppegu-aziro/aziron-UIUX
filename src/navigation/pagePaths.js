@@ -2,6 +2,7 @@
 export const PAGE_PATH = {
   "new-chat": "/new-chat",
   agents: "/agents",
+  "agents-v2": "/agents-v2",
   "agent-detail": "/agents/detail",
   chat: "/chat",
   kudos: "/kudos",
@@ -46,6 +47,8 @@ export function pathToActivePage(pathname) {
   if (!pathname || pathname === "/") return "new-chat";
   if (pathname === "/new-chat") return "new-chat";
   if (pathname.startsWith("/flows") || pathname === "/create-flow") return "flows";
+  // Checked before "/agents" so the v2 prototype does not fall through to it.
+  if (pathname.startsWith("/agents-v2")) return "agents";
   if (pathname.startsWith("/agents/detail")) return "agent-detail";
   if (pathname.startsWith("/agents")) return "agents";
   if (pathname.startsWith("/chat")) return "chat";

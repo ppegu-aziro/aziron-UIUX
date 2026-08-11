@@ -16,6 +16,7 @@ import NewChatPage from "@/components/pages/NewChatPage";
 import AgentsListPage from "@/components/pages/AgentsListPage";
 import AgentDetailPage from "@/components/pages/AgentDetailPage";
 import CreateAgentPage from "@/components/pages/CreateAgentPage";
+import AgentsV2Page from "@/components/pages/AgentsV2Page";
 import {
   INITIAL_AGENTS,
   loadAgentsFromStorage,
@@ -272,6 +273,8 @@ export default function AppRoutes() {
         path="/new-chat"
         element={<NewChatPage onNavigate={onNavigate} onStartChat={startChat} />}
       />
+      {/* Unified "Agents" concept prototype — see components/agents-v2/. */}
+      <Route path="/agents-v2" element={<AgentsV2Page onNavigate={onNavigate} />} />
       <Route
         path="/agents"
         element={
