@@ -143,7 +143,7 @@ function plan(prompt, agent, intent) {
   };
 }
 
-export default function AssistantPanel({ agent, onClose, seedPrompt, embedded = false, focused = false, onToggleFocus, isExpanded = false, onToggleExpand }) {
+export default function AssistantPanel({ agent, onClose, embedded = false, focused = false, onToggleFocus, isExpanded = false, onToggleExpand }) {
   const { patch, addFile, saveFiles } = useAgentsV2();
   const [messages, setMessages] = useState(() => [
     {
@@ -197,16 +197,6 @@ export default function AssistantPanel({ agent, onClose, seedPrompt, embedded = 
     const t = setTimeout(() => inputRef.current?.focus(), 50);
     return () => clearTimeout(t);
   }, []);
-
-  // A sentence typed on the catalog becomes this conversation's first turn, so
-  // stating intent and getting a draft are one action rather than two screens.
-  const seeded = useRef(false);
-  useEffect(() => {
-    if (seedPrompt && !seeded.current) {
-      seeded.current = true;
-      send(seedPrompt);
-    }
-  }, [seedPrompt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;

@@ -69,7 +69,7 @@ One sentence on what this agent does.
 ## When to ask first
 - What it must never guess at.`;
 
-export default function AgentView({ agentId, onBack, onDistribute, onChat, seedPrompt }) {
+export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
   const {
     get,
     patch,
@@ -88,9 +88,9 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, seedP
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [releasesOpen, setReleasesOpen] = useState(false);
   const [mode, setMode] = useState("edit");
-  // The assistant is part of the editing surface, not a page-level panel.
-  // Seeded creates arrive with it already open.
-  const [assist, setAssist] = useState(Boolean(seedPrompt));
+  // The assistant is part of the editing surface, not a page-level panel,
+  // and it is always opt-in.
+  const [assist, setAssist] = useState(false);
   // Panel widths are the user's to set: the width that suits reading a file
   // and the width that suits a conversation are not the same number.
   const [folderW, setFolderW] = useState(220);
@@ -464,7 +464,6 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, seedP
             >
               <AssistantPanel
                 agent={agent}
-                seedPrompt={seedPrompt}
                 onClose={() => setAssist(false)}
                 embedded
                 focused={focus === "assistant"}

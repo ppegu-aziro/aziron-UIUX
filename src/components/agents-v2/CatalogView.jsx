@@ -12,9 +12,7 @@ import {
   MessageSquare,
   MoreVertical,
   Pencil,
-  ArrowRight,
   Search,
-  Sparkles,
   Trash2,
   Upload,
   X,
@@ -52,78 +50,6 @@ import { FacetChips } from "./FacetChips";
  * default gesture on a card should be the thing a person mid-build wants —
  * chat is a hover control and a menu item beside it.
  */
-
-const EXAMPLES = [
-  "Answers HR questions from our handbook",
-  "Triages static-analysis findings and files the real ones",
-  "Provisions EKS clusters with eksctl",
-];
-
-/**
- * The on-ramp.
- *
- * Creation starts on the page you are already on, in a box that asks the one
- * question you can actually answer — what should it do — rather than behind a
- * button that mints an empty record and drops you in a maintenance screen.
- *
- * "Start blank" sits at the same altitude, so the assistant is opt-out rather
- * than mandatory. Every product that does this well offers the escape at equal
- * weight; the ones that don't force you to describe your intent to a model
- * before you are allowed to type.
- */
-function AgentStarter({ onCreateFromIntent, onStartBlank }) {
-  const [intent, setIntent] = useState("");
-  const submit = () => {
-    const t = intent.trim();
-    if (t) onCreateFromIntent(t);
-  };
-
-  return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <h2 className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-        <Sparkles className="size-3.5 text-primary" aria-hidden />
-        New agent
-      </h2>
-      <p className="mt-0.5 mb-3 text-xs text-muted-foreground">
-        Describe it and we&apos;ll draft the files — or start blank.
-      </p>
-
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Input
-          value={intent}
-          onChange={(e) => setIntent(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder="Describe what this agent should do…"
-          aria-label="Describe what this agent should do"
-          className="h-10 flex-1 text-sm"
-        />
-        <div className="flex items-center gap-2">
-          <Button type="button" size="lg" onClick={submit} disabled={!intent.trim()}>
-            Create
-            <ArrowRight className="size-3.5" data-icon="inline-end" aria-hidden />
-          </Button>
-          <Button type="button" size="lg" variant="ghost" onClick={onStartBlank}>
-            Start blank
-          </Button>
-        </div>
-      </div>
-
-      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-        <span className="text-[11px] text-muted-foreground">Try:</span>
-        {EXAMPLES.map((e) => (
-          <button
-            key={e}
-            type="button"
-            onClick={() => setIntent(e)}
-            className="rounded-full border border-border bg-muted/40 px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-          >
-            {e}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 const GRADIENTS = [
   "from-indigo-500 to-violet-500",
@@ -357,7 +283,7 @@ function AgentRow({ agent, actions, zebra }) {
   );
 }
 
-export default function CatalogView({ onChat, onEdit, onCreateFromIntent, onStartBlank }) {
+export default function CatalogView({ onChat, onEdit }) {
   const { agents, remove, fork, patch } = useAgentsV2();
   const [visibility, setVisibility] = useState("all");
   const [runsIn, setRunsIn] = useState([]);
@@ -410,8 +336,6 @@ export default function CatalogView({ onChat, onEdit, onCreateFromIntent, onStar
 
   return (
     <div className="flex flex-col gap-3">
-      <AgentStarter onCreateFromIntent={onCreateFromIntent} onStartBlank={onStartBlank} />
-
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[180px] flex-1">

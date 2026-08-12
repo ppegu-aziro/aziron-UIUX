@@ -37,15 +37,12 @@ function AgentsV2Inner({ onNavigate }) {
   const [view, setView] = useState("catalog");
   const [agentId, setAgentId] = useState(null);
   const [panel, setPanel] = useState(null); // { type: "chat", id }
-  // A sentence from the catalog, handed to the editor to open its assistant with.
-  const [seed, setSeed] = useState(null);
   const [expanded, setExpanded] = useState(false);
 
   const panelAgent = panel ? get(panel.id) : null;
   const hideMainColumn = Boolean(panelAgent) && expanded;
 
   const openEditor = (a) => {
-    setSeed(null);
     setAgentId(a?.id ?? a);
     setView("agent");
     // Arrive on a clean editor. A panel left open from the previous action is
@@ -80,29 +77,13 @@ function AgentsV2Inner({ onNavigate }) {
    * Assistant is not opened either; this is the hand-authoring path.
    */
   const startBlank = () => {
-    setSeed(null);
     openEditor(blankDraft());
   };
 
   /**
-   * Create from a sentence typed on the catalog.
-   *
-   * Stating intent and getting a draft are one action rather than two screens:
-   * the sentence becomes the Assistant's first turn, so by the time the
-   * workspace paints, the files are already being written.
-   */
-  const createFromIntent = (text) => {
-    const record = blankDraft();
-    setSeed(text);
-    setAgentId(record.id);
-    setView("agent");
-    setPanel(null);
-  };
-
-  /**
-   * Leaving the editor discards a draft nobody committed to: no name and no
-   * content. Keeping it would put an anonymous row in the catalog that the
-   * user never asked to create.
+   * Leaving the editor discards a draft nobody committed to: no name, no
+   * description, no content. Keeping it would put an anonymous row in the
+   * catalog that the user never asked to create.
    */
   const leaveEditor = () => {
     const a = agentId ? get(agentId) : null;
@@ -162,12 +143,7 @@ function AgentsV2Inner({ onNavigate }) {
 
               <div className="pb-12">
                 {view === "catalog" && (
-                  <CatalogView
-                    onChat={(a) => openPanel("chat", a)}
-                    onEdit={openEditor}
-                    onCreateFromIntent={createFromIntent}
-                    onStartBlank={startBlank}
-                  />
+                  <CatalogView onChat={(a) => openPanel("chat", a)} onEdit={openEditor} />
                 )}
 
                 {view === "agent" && agentId && (
@@ -177,7 +153,6 @@ function AgentsV2Inner({ onNavigate }) {
                     onBack={leaveEditor}
                     onDistribute={() => setView("distribute")}
                     onChat={(a) => openPanel("chat", a)}
-                    seedPrompt={seed}
                   />
                 )}
 
