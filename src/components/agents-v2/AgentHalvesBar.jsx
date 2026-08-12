@@ -1,4 +1,4 @@
-import { Boxes, ChevronRight, Cpu, Database, Wrench } from "lucide-react";
+import { Boxes, Cpu, Wrench } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { TOOL_POSTURE } from "@/data/agentsV2";
@@ -29,31 +29,23 @@ function Half({ icon: Icon, label, on, summary, onClick }) {
     <button
       type="button"
       onClick={onClick}
+      title={`${label} — ${summary}`}
+      aria-label={`${label}: ${summary}`}
       className={cn(
-        "group flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors",
+        "group flex h-8 min-w-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] transition-colors",
         on
-          ? "border-border bg-card hover:border-primary/40"
-          : "border-dashed border-border bg-muted/20 hover:border-primary/30",
+          ? "border-border bg-card text-foreground hover:border-primary/40"
+          : "border-dashed border-border bg-muted/20 text-muted-foreground hover:border-primary/30",
       )}
     >
       <Icon className={cn("size-3.5 shrink-0", on ? "text-primary" : "text-muted-foreground")} aria-hidden />
-      <span className="min-w-0">
-        <span className="block text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
-          {label}
-        </span>
-        <span
-          className={cn(
-            "block truncate text-[11px]",
-            on ? "text-foreground" : "text-muted-foreground italic",
-          )}
-        >
-          {summary}
-        </span>
-      </span>
-      <ChevronRight
-        className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-        aria-hidden
-      />
+      {/*
+        No uppercase label above the value any more. Inline, the summary is
+        already self-describing — "Claude Sonnet 4.5 · 3 tools" is obviously
+        the model, "Not released" obviously the release — and the label rows
+        were doubling the height of the whole header to say it twice.
+      */}
+      <span className={cn("truncate", !on && "italic")}>{summary}</span>
     </button>
   );
 }
@@ -72,14 +64,14 @@ export default function AgentHalvesBar({ agent, onSetup, onRelease, onSettings }
       ]
         .filter(Boolean)
         .join(" · ")
-    : "Not set up — pick a model to try it";
+    : "No model yet";
 
   const anywhereSummary = anywhere
     ? `v${agent.release.version} · ${agent.targets.length} target${agent.targets.length === 1 ? "" : "s"}`
     : "Not released";
 
   return (
-    <div className="flex flex-wrap items-stretch gap-2">
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
       <Half
         icon={Cpu}
         label="Model & tools"
@@ -94,23 +86,18 @@ export default function AgentHalvesBar({ agent, onSetup, onRelease, onSettings }
         summary={anywhereSummary}
         onClick={onRelease}
       />
-      {/* Icons only, and only when they carry a number worth glancing at. */}
+      {/*
+        One extra chip, and only for the state an admin would want to catch at
+        a glance. RAG and the rest live in the settings sheet; a header is not
+        a place to list configuration.
+      */}
       {here && agent.tools === "open" && (
         <span
-          className="flex items-center gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-2.5 text-[11px] text-foreground"
+          className="flex h-8 items-center gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-2.5 text-[11px] text-foreground"
           title="This agent can use every tool available to the caller"
         >
           <Wrench className="size-3 text-warning" aria-hidden />
           Open tools
-        </span>
-      )}
-      {here && agent.ragMode && (
-        <span
-          className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 text-[11px] text-muted-foreground"
-          title="Retrieves before answering"
-        >
-          <Database className="size-3" aria-hidden />
-          RAG
         </span>
       )}
     </div>

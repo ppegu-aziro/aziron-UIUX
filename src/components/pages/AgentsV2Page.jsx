@@ -96,8 +96,6 @@ function AgentsV2Inner({ onNavigate }) {
     backToCatalog();
   };
 
-  const title = view === "distribute" ? "Distribute" : "Agents";
-
   return (
     <main className="app-page-main flex h-full min-h-0 w-full flex-1 overflow-hidden bg-background">
       <Sidebar activePage="agents-v2" onNavigate={onNavigate} />
@@ -110,36 +108,37 @@ function AgentsV2Inner({ onNavigate }) {
 
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="flex flex-col gap-4 px-6 py-4">
-              <PageHeader
-                title={title}
-              >
-                {view === "catalog" && (
-                  <>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        reset();
-                        backToCatalog();
-                        closePanel();
-                        toast.message("Prototype reset to its seed data");
-                      }}
-                    >
-                      <RotateCcw className="size-3.5" aria-hidden />
-                      Reset
-                    </Button>
-                    <Badge variant="outline" className="gap-1">
-                      <Boxes className="size-3" aria-hidden />
-                      concept · v2
-                    </Badge>
-                    <Button type="button" size="sm" onClick={startBlank}>
-                      <Plus className="size-3.5" aria-hidden />
-                      New agent
-                    </Button>
-                  </>
-                )}
-              </PageHeader>
+              {/*
+                Only the catalog needs a page title. On an agent, "Agents"
+                sat above a screen whose own header already names the thing
+                you are looking at.
+              */}
+              {view === "catalog" && (
+                <PageHeader title="Agents">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      reset();
+                      backToCatalog();
+                      closePanel();
+                      toast.message("Prototype reset to its seed data");
+                    }}
+                  >
+                    <RotateCcw className="size-3.5" aria-hidden />
+                    Reset
+                  </Button>
+                  <Badge variant="outline" className="gap-1">
+                    <Boxes className="size-3" aria-hidden />
+                    concept · v2
+                  </Badge>
+                  <Button type="button" size="sm" onClick={startBlank}>
+                    <Plus className="size-3.5" aria-hidden />
+                    New agent
+                  </Button>
+                </PageHeader>
+              )}
 
               <div className="pb-12">
                 {view === "catalog" && (

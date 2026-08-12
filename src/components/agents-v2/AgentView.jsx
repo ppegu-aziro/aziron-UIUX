@@ -169,92 +169,29 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
   return (
     <div className="flex flex-col gap-4">
       {/*
-        One header block, not three.
+        One row.
 
-        Identity, the two halves and the actions were a name row, two bordered
-        cards and a lone kebab — roughly two hundred pixels before the file
-        appeared, on a screen whose entire job is the file. Everything that is
-        a summary is now a summary: one line to read, one click to open.
+        It was three: a page title saying "Agents" above an agent that names
+        itself, a name row, and a strip of two label-over-value cards. Identity
+        does not need a column of its own — the name, the slug, what it runs on
+        and what has shipped are all the same fact about the same thing, so
+        they read as one line.
       */}
-      <div className="flex flex-col gap-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <Button type="button" variant="ghost" size="icon-sm" onClick={onBack} aria-label="Back to agents">
-              <ArrowLeft className="size-4" aria-hidden />
-            </Button>
-            <div className="min-w-0">
-              <h2
-                className={cn(
-                  "truncate text-lg leading-6 font-semibold tracking-tight",
-                  agent.name.trim() ? "text-foreground" : "text-muted-foreground italic",
-                )}
-              >
-                {agent.name.trim() || "Name this agent"}
-              </h2>
-              <p className="truncate font-mono text-[11px] text-muted-foreground">{agent.slug || "—"}</p>
-            </div>
-          </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <Button type="button" variant="ghost" size="icon-sm" onClick={onBack} aria-label="Back to agents">
+          <ArrowLeft className="size-4" aria-hidden />
+        </Button>
 
-          <div className="flex shrink-0 items-center gap-2">
-            {/*
-              Promoted out of the menu. Trying the agent is how you find out
-              whether any of the editing worked, so it should not be two
-              clicks behind a kebab.
-            */}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={!agent.runtime}
-              title={agent.runtime ? `Try it on ${agent.runtime.model}` : "Bind a model first"}
-              onClick={() => onChat?.(agent)}
-            >
-              <MessageSquare className="size-3.5" aria-hidden />
-              Try this agent
-            </Button>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={<Button type="button" variant="outline" size="icon-sm" aria-label="More actions" />}
-              >
-                <MoreVertical className="size-3.5" aria-hidden />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuItem
-                  disabled={!ready}
-                  onClick={() => {
-                    const copy = fork(agent.id);
-                    if (copy) toast.success(`Forked as “${copy.name}”`);
-                  }}
-                >
-                  <GitFork className="size-3.5" aria-hidden />
-                  Fork
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={!ready}
-                  onClick={() => {
-                    patch(agent.id, { visibility: agent.visibility === "public" ? "private" : "public" });
-                    toast.success(agent.visibility === "public" ? "Unpublished" : "Published");
-                  }}
-                >
-                  <Upload className="size-3.5" aria-hidden />
-                  {agent.visibility === "public" ? "Unpublish" : "Publish"}
-                  {!ready && <span className="ml-auto text-[10px] text-muted-foreground">needs a name</span>}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem disabled={!ready} onClick={() => setDialog("release")}>
-                  <Rocket className="size-3.5" aria-hidden />
-                  {agent.release ? "New release" : "Release"}
-                </DropdownMenuItem>
-                {agent.release && (
-                  <DropdownMenuItem onClick={onDistribute}>
-                    <Boxes className="size-3.5" aria-hidden />
-                    View install
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+        <div className="flex min-w-0 items-baseline gap-2">
+          <h2
+            className={cn(
+              "truncate text-base leading-6 font-semibold tracking-tight",
+              agent.name.trim() ? "text-foreground" : "text-muted-foreground italic",
+            )}
+          >
+            {agent.name.trim() || "Name this agent"}
+          </h2>
+          <span className="truncate font-mono text-[11px] text-muted-foreground">{agent.slug || "—"}</span>
         </div>
 
         <AgentHalvesBar
@@ -270,6 +207,62 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
             else setDialog("release");
           }}
         />
+
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!agent.runtime}
+            title={agent.runtime ? `Try it on ${agent.runtime.model}` : "Pick a model first"}
+            onClick={() => onChat?.(agent)}
+          >
+            <MessageSquare className="size-3.5" aria-hidden />
+            Try this agent
+          </Button>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<Button type="button" variant="outline" size="icon-sm" aria-label="More actions" />}
+            >
+              <MoreVertical className="size-3.5" aria-hidden />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem
+                disabled={!ready}
+                onClick={() => {
+                  const copy = fork(agent.id);
+                  if (copy) toast.success(`Forked as “${copy.name}”`);
+                }}
+              >
+                <GitFork className="size-3.5" aria-hidden />
+                Fork
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!ready}
+                onClick={() => {
+                  patch(agent.id, { visibility: agent.visibility === "public" ? "private" : "public" });
+                  toast.success(agent.visibility === "public" ? "Unpublished" : "Published");
+                }}
+              >
+                <Upload className="size-3.5" aria-hidden />
+                {agent.visibility === "public" ? "Unpublish" : "Publish"}
+                {!ready && <span className="ml-auto text-[10px] text-muted-foreground">needs a name</span>}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={!ready} onClick={() => setDialog("release")}>
+                <Rocket className="size-3.5" aria-hidden />
+                {agent.release ? "New release" : "Release"}
+              </DropdownMenuItem>
+              {agent.release && (
+                <DropdownMenuItem onClick={onDistribute}>
+                  <Boxes className="size-3.5" aria-hidden />
+                  View install
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/*
