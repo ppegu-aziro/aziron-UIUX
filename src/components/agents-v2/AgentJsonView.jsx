@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Info, Wand2 } from "lucide-react";
+import { AlertTriangle, Braces, Columns2, Info, ListFilter, SlidersHorizontal, Wand2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { fieldAt } from "@/data/agentJsonSchema";
-import { parseAgentJson, lineOfPath } from "./utils/agentJson";
+import { changedPaths, parseAgentJson, lineOfPath } from "./utils/agentJson";
 import { jsonContextAt } from "./utils/jsonPath";
 import AgentJsonForm from "./AgentJsonForm";
 import EditorSuggest from "./EditorSuggest";
@@ -30,10 +30,18 @@ import EditorSuggest from "./EditorSuggest";
  * never blocked — you are always free to keep typing your way out.
  */
 
+/**
+ * Named for what you get, not for how it is rendered.
+ *
+ * "Form / Split / JSON" described the machinery: two of the three were words
+ * about layout and none said what you would be looking at. "Settings" is the
+ * thing a person came here to change, and "JSON" is safe to say because the
+ * file is named AGENT.json one row above — the word is already on screen.
+ */
 const MODES = [
-  { id: "form", label: "Form" },
-  { id: "split", label: "Split" },
-  { id: "json", label: "JSON" },
+  { id: "form", label: "Settings", icon: SlidersHorizontal, hint: "Edit with controls" },
+  { id: "split", label: "Both", icon: Columns2, hint: "Controls beside the file" },
+  { id: "json", label: "JSON", icon: Braces, hint: "Edit the file directly" },
 ];
 
 /** Plain sentences, each with its repair. */
@@ -92,7 +100,7 @@ export default function AgentJsonView({
   onFlush,
 }) {
   const [mode, setMode] = useState("form");
-  const [tier, setTier] = useState("common");
+  const [onlyChanged, setOnlyChanged] = useState(false);
   // One dotted path, shared by both panes — the thing that makes them read as
   // one editor rather than two views of a file.
   const [cursorPath, setCursorPath] = useState(null);
@@ -111,6 +119,7 @@ export default function AgentJsonView({
   const live = useMemo(() => parseAgentJson(text, agent), [text, agent]);
   const shown = useMemo(() => parseAgentJson(settled, agent), [settled, agent]);
   const broken = !live.doc;
+  const changedCount = useMemo(() => changedPaths(agent).size, [agent]);
 
   // Whatever the last mode click was, a document that will not parse cannot
   // hand the screen to the form.
@@ -155,7 +164,18 @@ export default function AgentJsonView({
 
   return (
     <>
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-1.5">
+      {/*
+        One row, not two.
+
+        This carried a mode switcher above a Common/Only-changed/All switcher,
+        and two identical pill groups stacked read as one control broken in
+        half — while in fact they answered unrelated questions: one picks how
+        you edit, the other how much you see. So only the first is a switcher
+        now. The second was also doing very little work, since "Common" and
+        "All" differed by four fields; those moved to a disclosure inside the
+        one section that owns them, and the filter became the count itself.
+      */}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border px-3 py-1.5">
         <div className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5">
           {MODES.map((m) => {
             const blocked = m.id === "form" && broken;
@@ -167,22 +187,48 @@ export default function AgentJsonView({
                 variant={effective === m.id ? "secondary" : "ghost"}
                 aria-pressed={effective === m.id}
                 disabled={blocked}
-                title={blocked ? "Fix the JSON first — it does not parse" : undefined}
+                title={blocked ? "Fix the JSON first — it will not parse" : m.hint}
                 onClick={() => goToMode(m.id)}
               >
+                <m.icon className="size-3" aria-hidden />
                 {m.label}
               </Button>
             );
           })}
         </div>
 
-        {broken && (
+        {broken ? (
           <span className="text-[11px] text-destructive">
-            The form is unavailable until this parses. Your settings are untouched.
+            Settings are locked until this parses — nothing you had is lost.
           </span>
-        )}
-        {!broken && !live.ok && (
-          <span className="text-[11px] text-warning">Not applied — see below.</span>
+        ) : !live.ok ? (
+          <span className="text-[11px] text-warning">Not saved yet — see below.</span>
+        ) : null}
+
+        {/*
+          The count IS the filter. It was a third segment in a second pill
+          group, which spent a whole control on something you want about once a
+          session; as a chip it costs nothing and says the more useful thing
+          even when you never press it.
+        */}
+        {showForm && (
+          <div className="ml-auto flex items-center gap-2">
+            {changedCount === 0 ? (
+              <span className="text-[11px] text-muted-foreground">Nothing changed from the defaults</span>
+            ) : (
+              <Button
+                type="button"
+                size="xs"
+                variant={onlyChanged ? "secondary" : "ghost"}
+                aria-pressed={onlyChanged}
+                onClick={() => setOnlyChanged((v) => !v)}
+                title={onlyChanged ? "Show everything again" : "Show only what you changed"}
+              >
+                <ListFilter className="size-3" aria-hidden />
+                {changedCount} changed
+              </Button>
+            )}
+          </div>
         )}
       </div>
 
@@ -203,8 +249,8 @@ export default function AgentJsonView({
           >
             <AgentJsonForm
               agent={agent}
-              tier={tier}
-              onTierChange={setTier}
+              onlyChanged={onlyChanged}
+              onShowAll={() => setOnlyChanged(false)}
               onEdit={editField}
               onFocusPath={setCursorPath}
               cursorPath={cursorPath}

@@ -1,9 +1,9 @@
-import { useMemo } from "react";
-import { Boxes, Cpu, Database, MessageSquare, Sparkles } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Boxes, ChevronDown, ChevronRight, Cpu, Database, MessageSquare, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { FIELDS, SECTIONS, fieldsIn } from "@/data/agentJsonSchema";
+import { SECTIONS, fieldsIn } from "@/data/agentJsonSchema";
 import { changedPaths, toDoc } from "./utils/agentJson";
 import { Section } from "./utils/formControls";
 import SchemaField from "./SchemaField";
@@ -15,10 +15,11 @@ import SchemaField from "./SchemaField";
  * A hand-written form beside a schema-driven validator is how a product ends up
  * offering a value its own file rejects.
  *
- * It opens on Common rather than showing all twenty-odd fields, because this
- * screen already learned that lesson once: the tabbed layout was removed for
- * handing a nine-section configuration form to someone who had not yet written
- * a sentence, and a complete generated form re-creates exactly that.
+ * Rarely-touched fields sit behind a disclosure inside the section that owns
+ * them, rather than behind a global Common/All switch. Sampling settings are a
+ * fact about the model, so the place to ask for them is under the model — and a
+ * top-level control that governed four fields cost more attention than the four
+ * fields were worth.
  */
 
 const ICONS = {
@@ -29,57 +30,31 @@ const ICONS = {
   workspace: Sparkles,
 };
 
-const TIERS = [
-  { id: "common", label: "Common" },
-  { id: "changed", label: "Only changed" },
-  { id: "all", label: "All" },
-];
-
-export default function AgentJsonForm({ agent, tier, onTierChange, onEdit, onFocusPath, cursorPath }) {
+export default function AgentJsonForm({ agent, onlyChanged, onShowAll, onEdit, onFocusPath, cursorPath }) {
   // Built from the record so the form still renders when the text is broken.
   // Reading the half-typed document instead would hand every control undefined
   // at exactly the moment the form is the only surface still working.
   const doc = useMemo(() => toDoc(agent), [agent]);
   const changed = useMemo(() => changedPaths(agent), [agent]);
   const ctx = { doc, agent };
+  const [expanded, setExpanded] = useState(() => new Set());
 
-  const visible = (spec) => {
-    if (spec.when && !spec.when(ctx)) return false;
-    if (tier === "all") return true;
-    if (tier === "changed") return changed.has(spec.path);
-    return spec.tier === "common";
-  };
+  const visible = (spec) =>
+    (!spec.when || spec.when(ctx)) && (!onlyChanged || changed.has(spec.path));
 
-  const shown = FIELDS.filter(visible);
+  const anyVisible = SECTIONS.some((s) => fieldsIn(s.id).some(visible));
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5">
-          {TIERS.map((t) => (
-            <Button
-              key={t.id}
-              type="button"
-              size="xs"
-              variant={tier === t.id ? "secondary" : "ghost"}
-              aria-pressed={tier === t.id}
-              onClick={() => onTierChange(t.id)}
-            >
-              {t.label}
-              {t.id === "changed" && changed.size > 0 && (
-                <span className="ml-1 font-mono text-[10px] text-muted-foreground">{changed.size}</span>
-              )}
-            </Button>
-          ))}
-        </div>
-        <p className="text-[11px] text-muted-foreground">
-          {shown.length} of {FIELDS.length} settings
-        </p>
-      </div>
-
       {SECTIONS.map((section) => {
-        const specs = fieldsIn(section.id).filter(visible);
-        if (!specs.length) return null;
+        const all = fieldsIn(section.id).filter(visible);
+        if (!all.length) return null;
+
+        const hidden = all.filter((f) => f.tier === "advanced").length;
+        // Filtering to what changed is already a deliberate narrowing; hiding
+        // some of the result behind a second disclosure would be a second one.
+        const open = expanded.has(section.id) || onlyChanged;
+        const specs = open ? all : all.filter((f) => f.tier === "common");
         const Icon = ICONS[section.id];
 
         return (
@@ -130,15 +105,42 @@ export default function AgentJsonForm({ agent, tier, onTierChange, onEdit, onFoc
                   />
                 </div>
               ))}
+
+              {hidden > 0 && !onlyChanged && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setExpanded((s) => {
+                      const next = new Set(s);
+                      next.has(section.id) ? next.delete(section.id) : next.add(section.id);
+                      return next;
+                    })
+                  }
+                  aria-expanded={open}
+                  className="flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {open ? (
+                    <ChevronDown className="size-3" aria-hidden />
+                  ) : (
+                    <ChevronRight className="size-3" aria-hidden />
+                  )}
+                  {open ? "Fewer settings" : `${hidden} more setting${hidden === 1 ? "" : "s"}`}
+                </button>
+              )}
             </div>
           </Section>
         );
       })}
 
-      {tier === "changed" && changed.size === 0 && (
-        <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
-          Nothing has been changed from its default yet, so AGENT.json is nearly empty.
-        </p>
+      {onlyChanged && !anyVisible && (
+        <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center">
+          <p className="text-xs text-muted-foreground">
+            Nothing has been changed from its defaults, so AGENT.json is nearly empty.
+          </p>
+          <Button type="button" size="xs" variant="outline" className="mt-2" onClick={onShowAll}>
+            Show every setting
+          </Button>
+        </div>
       )}
     </div>
   );
