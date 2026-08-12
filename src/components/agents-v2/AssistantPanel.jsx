@@ -143,7 +143,7 @@ function plan(prompt, agent, intent) {
   };
 }
 
-export default function AssistantPanel({ agent, onClose, seedPrompt, embedded = false, isExpanded = false, onToggleExpand }) {
+export default function AssistantPanel({ agent, onClose, seedPrompt, embedded = false, focused = false, onToggleFocus, isExpanded = false, onToggleExpand }) {
   const { patch, addFile, saveFiles } = useAgentsV2();
   const [messages, setMessages] = useState(() => [
     {
@@ -234,13 +234,40 @@ export default function AssistantPanel({ agent, onClose, seedPrompt, embedded = 
       <div className={embedded
         ? "flex h-11 flex-shrink-0 items-center gap-2 border-b border-border bg-card px-3"
         : "flex h-16 flex-shrink-0 items-center gap-2 border-b border-border bg-card px-4"}>
-        <div className="flex size-9 flex-shrink-0 items-center justify-center rounded-[4px] border border-primary/30 bg-primary/10">
-          <Sparkles size={16} className="text-primary" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-foreground">Assistant</p>
-          <p className="truncate text-xs text-muted-foreground">Writes into this agent&apos;s folder</p>
-        </div>
+        {/* Embedded: a 36px bar matching the file toolbar, so the two columns
+            start on the same line rather than the conversation appearing to
+            hang off the file. */}
+        {embedded ? (
+          <>
+            <Sparkles size={13} className="shrink-0 text-primary" aria-hidden />
+            <span className="truncate text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
+              Assistant
+            </span>
+          </>
+        ) : (
+          <>
+            <div className="flex size-9 flex-shrink-0 items-center justify-center rounded-[4px] border border-primary/30 bg-primary/10">
+              <Sparkles size={16} className="text-primary" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-foreground">Assistant</p>
+              <p className="truncate text-xs text-muted-foreground">
+                Writes into this agent&apos;s folder
+              </p>
+            </div>
+          </>
+        )}
+
+        {onToggleFocus && (
+          <button
+            aria-label={focused ? "Restore layout" : "Focus the assistant"}
+            aria-pressed={focused}
+            onClick={onToggleFocus}
+            className="ml-auto flex size-6 items-center justify-center rounded-[6px] text-muted-foreground transition-colors hover:bg-muted"
+          >
+            {focused ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+          </button>
+        )}
         {onToggleExpand && (
           <button
             aria-label={isExpanded ? "Restore panel size" : "Maximize"}
@@ -253,9 +280,13 @@ export default function AssistantPanel({ agent, onClose, seedPrompt, embedded = 
         <button
           aria-label="Close"
           onClick={onClose}
-          className="flex size-7 items-center justify-center rounded-[6px] text-muted-foreground transition-colors hover:bg-muted"
+          className={
+            embedded
+              ? "flex size-6 items-center justify-center rounded-[6px] text-muted-foreground transition-colors hover:bg-muted"
+              : "ml-auto flex size-7 items-center justify-center rounded-[6px] text-muted-foreground transition-colors hover:bg-muted"
+          }
         >
-          <X size={15} />
+          <X size={embedded ? 13 : 15} />
         </button>
       </div>
 

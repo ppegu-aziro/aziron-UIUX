@@ -131,11 +131,6 @@ function AgentsV2Inner({ onNavigate }) {
             <div className="flex flex-col gap-4 px-6 py-4">
               <PageHeader
                 title={title}
-                description={
-                  view === "catalog"
-                    ? "One agent is a folder of instructions. Give it a model and it runs here; release it and it runs anywhere."
-                    : undefined
-                }
               >
                 {view === "catalog" && (
                   <>

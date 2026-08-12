@@ -82,10 +82,10 @@ function AgentStarter({ onCreateFromIntent, onStartBlank }) {
     <div className="rounded-xl border border-border bg-card p-4">
       <h2 className="flex items-center gap-1.5 text-sm font-medium text-foreground">
         <Sparkles className="size-3.5 text-primary" aria-hidden />
-        Create an agent
+        New agent
       </h2>
       <p className="mt-0.5 mb-3 text-xs text-muted-foreground">
-        Say what it should do and the assistant drafts the files. You edit everything afterwards.
+        Describe it and we&apos;ll draft the files — or start blank.
       </p>
 
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -215,7 +215,7 @@ function AgentMenu({ agent, onChat, onEdit, onFork, onPublish, onDelete }) {
       <DropdownMenuContent align="end" className="w-44" onClick={(e) => e.stopPropagation()}>
         <DropdownMenuItem onClick={() => onChat(agent)}>
           <MessageSquare className="size-3.5" aria-hidden />
-          Chat
+          Try this agent
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onEdit(agent)}>
           <Pencil className="size-3.5" aria-hidden />
@@ -270,7 +270,7 @@ function AgentCard({ agent, actions }) {
             type="button"
             variant="ghost"
             size="icon-sm"
-            aria-label={`Chat with ${agent.name || "unnamed agent"}`}
+            aria-label={`Try ${agent.name || "unnamed agent"}`}
             onClick={(e) => {
               e.stopPropagation();
               actions.onChat(agent);

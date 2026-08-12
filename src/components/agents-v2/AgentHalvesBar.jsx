@@ -1,104 +1,110 @@
-import { Boxes, Cpu, Database, Wrench } from "lucide-react";
+import { Boxes, ChevronRight, Cpu, Database, Wrench } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { TARGET_BY_ID, TOOL_POSTURE } from "@/data/agentsV2";
+import { TOOL_POSTURE } from "@/data/agentsV2";
 
 /**
- * The two halves, as a bar under the header.
+ * The two halves, as one compact strip.
  *
- * They were a right rail competing with the editor for width, and the settings
- * that fill them were a third tab presented as a peer of "write the thing".
- * Neither placement matched what they are: the answer to "where does this run",
- * which is a property of the agent rather than a place you go.
+ * They were two bordered cards with their own headings and badge rows, which
+ * cost roughly two hundred pixels of chrome above the file — on an authoring
+ * screen, where the file is the thing. Worse, a card that large reads as a
+ * section you are meant to work in, and neither is: they are summaries you
+ * click through to.
  *
- * Unset halves stay visible and dashed. The gap is the invitation.
+ * So: one line, two summaries, each a button to the sheet that owns it. Unset
+ * halves stay visible and dashed, because the gap is still the invitation.
  */
 
-function Half({ icon: Icon, title, on, children, action, actionLabel }) {
+function Half({ icon: Icon, label, on, summary, onClick }) {
   return (
-    <div
+    <button
+      type="button"
+      onClick={onClick}
       className={cn(
-        "flex min-w-0 flex-col rounded-xl border p-3",
-        on ? "border-border bg-card" : "border-dashed border-border bg-muted/20",
+        "group flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors",
+        on
+          ? "border-border bg-card hover:border-primary/40"
+          : "border-dashed border-border bg-muted/20 hover:border-primary/30",
       )}
     >
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-foreground uppercase">
-          <Icon className="size-3.5 text-muted-foreground" aria-hidden />
-          {title}
-        </h3>
-        <Button type="button" variant="outline" size="xs" onClick={action}>
-          {actionLabel}
-        </Button>
-      </div>
-      <div className="mt-2 min-w-0">{children}</div>
-    </div>
+      <Icon className={cn("size-3.5 shrink-0", on ? "text-primary" : "text-muted-foreground")} aria-hidden />
+      <span className="min-w-0">
+        <span className="block text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+          {label}
+        </span>
+        <span
+          className={cn(
+            "block truncate text-[11px]",
+            on ? "text-foreground" : "text-muted-foreground italic",
+          )}
+        >
+          {summary}
+        </span>
+      </span>
+      <ChevronRight
+        className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+        aria-hidden
+      />
+    </button>
   );
 }
 
 export default function AgentHalvesBar({ agent, onSetup, onRelease, onSettings }) {
-  const posture = TOOL_POSTURE[agent.tools];
   const here = Boolean(agent.runtime);
   const anywhere = Boolean(agent.release);
 
+  const hereSummary = here
+    ? [
+        agent.runtime.model,
+        agent.tools === "scoped"
+          ? `${agent.granted.length} tools`
+          : TOOL_POSTURE[agent.tools].label.toLowerCase(),
+        agent.knowledge.length ? `${agent.knowledge.length} sources` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "No model — set one up to try it";
+
+  const anywhereSummary = anywhere
+    ? `v${agent.release.version} · ${agent.targets.length} target${agent.targets.length === 1 ? "" : "s"}`
+    : "Not released";
+
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="flex flex-wrap items-stretch gap-2">
       <Half
         icon={Cpu}
-        title="Runs here"
+        label="Runs here"
         on={here}
-        action={here ? onSettings : onSetup}
-        actionLabel={here ? "Settings" : "Set up"}
-      >
-        {here ? (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Badge variant="outline">{agent.runtime.model}</Badge>
-            <Badge variant="outline" className="gap-1">
-              <Wrench className="size-2.5" aria-hidden />
-              {agent.tools === "scoped" ? `${agent.granted.length} tools` : posture.label}
-            </Badge>
-            {agent.knowledge.length > 0 && (
-              <Badge variant="outline" className="gap-1">
-                <Database className="size-2.5" aria-hidden />
-                {agent.knowledge.length}
-              </Badge>
-            )}
-          </div>
-        ) : (
-          <p className="text-[11px] leading-4 text-muted-foreground">
-            No model, no tools, no knowledge. Set one up to chat with it here.
-          </p>
-        )}
-      </Half>
-
+        summary={hereSummary}
+        onClick={here ? onSettings : onSetup}
+      />
       <Half
         icon={Boxes}
-        title="Runs anywhere"
+        label="Runs anywhere"
         on={anywhere}
-        action={onRelease}
-        actionLabel={anywhere ? "New release" : "Release"}
-      >
-        {anywhere ? (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Badge variant="outline" className="font-mono">
-              v{agent.release.version}
-            </Badge>
-            {agent.targets.map((t) => (
-              <Badge key={t} variant="secondary">
-                {TARGET_BY_ID[t]?.name ?? t}
-              </Badge>
-            ))}
-          </div>
-        ) : (
-          <p className="truncate font-mono text-[11px] text-muted-foreground">
-            {/* The real install path, filling in live as the name is typed —
-                the first lesson that a name becomes a directory. */}
-            ~/.claude/skills/{agent.slug || "—"}/
-          </p>
-        )}
-      </Half>
+        summary={anywhereSummary}
+        onClick={onRelease}
+      />
+      {/* Icons only, and only when they carry a number worth glancing at. */}
+      {here && agent.tools === "open" && (
+        <span
+          className="flex items-center gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-2.5 text-[11px] text-foreground"
+          title="This agent can use every tool available to the caller"
+        >
+          <Wrench className="size-3 text-warning" aria-hidden />
+          Open tools
+        </span>
+      )}
+      {here && agent.ragMode && (
+        <span
+          className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 text-[11px] text-muted-foreground"
+          title="Retrieves before answering"
+        >
+          <Database className="size-3" aria-hidden />
+          RAG
+        </span>
+      )}
     </div>
   );
 }

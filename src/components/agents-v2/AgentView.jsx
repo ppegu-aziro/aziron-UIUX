@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Eye,
+  Maximize2,
+  Minimize2,
+  Boxes,
   GitFork,
   MessageSquare,
   MoreVertical,
@@ -36,6 +39,7 @@ import ReleasesPanel from "./ReleasesPanel";
 import FrontmatterEditor from "./FrontmatterEditor";
 import AssistantPanel from "./AssistantPanel";
 import PathSuggest from "./PathSuggest";
+import Resizer from "./Resizer";
 
 /**
  * The agent workspace.
@@ -87,6 +91,12 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, seedP
   // The assistant is part of the editing surface, not a page-level panel.
   // Seeded creates arrive with it already open.
   const [assist, setAssist] = useState(Boolean(seedPrompt));
+  // Panel widths are the user's to set: the width that suits reading a file
+  // and the width that suits a conversation are not the same number.
+  const [folderW, setFolderW] = useState(220);
+  const [assistW, setAssistW] = useState(380);
+  // null | "folder" | "editor" | "assistant" — one panel taking the full width.
+  const [focus, setFocus] = useState(null);
   const [activePath, setActivePath] = useState("AGENT.md");
   const [pendingDelete, setPendingDelete] = useState(null);
 
@@ -163,178 +173,236 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, seedP
 
   return (
     <div className="flex flex-col gap-4">
-      {/* ── Header: identity, and only the actions that make sense ───────── */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-1 items-start gap-3">
-          <Button type="button" variant="ghost" size="icon-sm" onClick={onBack} aria-label="Back to agents">
-            <ArrowLeft className="size-4" aria-hidden />
-          </Button>
-          <div className="min-w-0 flex-1">
-            {/*
-              Read-only here. Name, description, category and targets are
-              frontmatter, and frontmatter is edited in the file it belongs to
-              — duplicating them in the header meant two places to change one
-              value, and neither looked like what ends up on disk.
-            */}
-            <h2
-              className={cn(
-                "truncate text-xl font-semibold tracking-tight",
-                agent.name.trim() ? "text-foreground" : "text-muted-foreground italic",
-              )}
-            >
-              {agent.name.trim() || "Name this agent"}
-            </h2>
-            <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
-              {agent.slug || "—"}
-            </p>
-          </div>
-        </div>
+      {/*
+        One header block, not three.
 
-        <div className="flex shrink-0 items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={<Button type="button" variant="outline" size="icon-sm" aria-label="More actions" />}
-            >
-              <MoreVertical className="size-3.5" aria-hidden />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              {/*
-                Disabled with a stated reason. An empty, unnamed draft could
-                previously be chatted with, forked, published and released —
-                four ways to make a mess out of nothing.
-              */}
-              <DropdownMenuItem disabled={!agent.runtime} onClick={() => onChat?.(agent)}>
-                <MessageSquare className="size-3.5" aria-hidden />
-                Chat
-                {!agent.runtime && <span className="ml-auto text-[10px] text-muted-foreground">no model</span>}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={!ready}
-                onClick={() => {
-                  const copy = fork(agent.id);
-                  if (copy) toast.success(`Forked as “${copy.name}”`);
-                }}
+        Identity, the two halves and the actions were a name row, two bordered
+        cards and a lone kebab — roughly two hundred pixels before the file
+        appeared, on a screen whose entire job is the file. Everything that is
+        a summary is now a summary: one line to read, one click to open.
+      */}
+      <div className="flex flex-col gap-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Button type="button" variant="ghost" size="icon-sm" onClick={onBack} aria-label="Back to agents">
+              <ArrowLeft className="size-4" aria-hidden />
+            </Button>
+            <div className="min-w-0">
+              <h2
+                className={cn(
+                  "truncate text-lg leading-6 font-semibold tracking-tight",
+                  agent.name.trim() ? "text-foreground" : "text-muted-foreground italic",
+                )}
               >
-                <GitFork className="size-3.5" aria-hidden />
-                Fork
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                disabled={!ready}
-                onClick={() => {
-                  patch(agent.id, { visibility: agent.visibility === "public" ? "private" : "public" });
-                  toast.success(agent.visibility === "public" ? "Unpublished" : "Published");
-                }}
-              >
-                <Upload className="size-3.5" aria-hidden />
-                {agent.visibility === "public" ? "Unpublish" : "Publish"}
-                {!ready && <span className="ml-auto text-[10px] text-muted-foreground">needs a name</span>}
-              </DropdownMenuItem>
-              <DropdownMenuItem disabled={!ready} onClick={() => setDialog("release")}>
-                <Rocket className="size-3.5" aria-hidden />
-                {agent.release ? "New release" : "Release"}
-              </DropdownMenuItem>
-              {agent.release && (
-                <DropdownMenuItem onClick={onDistribute}>
-                  <Rocket className="size-3.5" aria-hidden />
-                  View install
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-
-      <AgentHalvesBar
-        agent={agent}
-        onSetup={() => setDialog("model")}
-        onSettings={() => setSettingsOpen(true)}
-        onRelease={() => {
-          if (!ready) {
-            toast.error("Give it a name and some instructions first.");
-            return;
-          }
-          // Released agents open their history; unreleased ones have no history
-          // to show, so they go straight to the dialog.
-          if (agent.release) setReleasesOpen(true);
-          else setDialog("release");
-        }}
-      />
-
-      {/* ── The folder, and the file you picked ──────────────────────────── */}
-      <div className="flex min-h-[460px] flex-col overflow-hidden rounded-xl border border-border bg-card sm:flex-row">
-        {/* flex column so the tree can fill the panel and make the empty space
-            below the last file a real right-click target. */}
-        <div className="flex w-full shrink-0 flex-col border-b border-border p-2 sm:w-[220px] sm:border-r sm:border-b-0">
-          <p className="mb-1.5 px-2 text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
-            Folder
-          </p>
-          <FileTree
-            files={agent.files}
-            folders={agent.folders}
-            activePath={activeFile.path}
-            onSelect={setActivePath}
-            onAction={onFileAction}
-            onCreate={createInline}
-            onRename={renameInline}
-            onMove={moveInline}
-            onCreateSuggested={(path, seed) => {
-              addFile(agent.id, path, seed);
-              setActivePath(path);
-            }}
-          />
-        </div>
-
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
-            <span className="truncate font-mono text-[11px] text-muted-foreground">{activeFile.path}</span>
-            {isEntry && <Badge variant="outline">entrypoint</Badge>}
-            {/*
-              One toolbar for "how am I working on this file". Edit and Preview
-              are two views of the document; Assistant splits the pane beside
-              it rather than replacing it, because the whole claim of the panel
-              is that you watch the file change while you ask.
-            */}
-            <div className="ml-auto flex items-center gap-2">
-              <div className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5">
-                {[
-                  { id: "edit", label: "Edit", icon: PenLine },
-                  { id: "preview", label: "Preview", icon: Eye },
-                ].map((m) => (
-                  <Button
-                    key={m.id}
-                    type="button"
-                    size="xs"
-                    variant={mode === m.id ? "secondary" : "ghost"}
-                    onClick={() => setMode(m.id)}
-                    aria-pressed={mode === m.id}
-                    disabled={!isMarkdown && m.id === "preview"}
-                    title={!isMarkdown && m.id === "preview" ? "Preview is for markdown files" : undefined}
-                  >
-                    <m.icon className="size-3" aria-hidden />
-                    {m.label}
-                  </Button>
-                ))}
-              </div>
-
-              <Button
-                type="button"
-                size="xs"
-                variant={assist ? "secondary" : "outline"}
-                aria-pressed={assist}
-                onClick={() => setAssist((v) => !v)}
-                title="Ask for changes to this agent"
-              >
-                <Sparkles className="size-3" aria-hidden />
-                Assistant
-              </Button>
+                {agent.name.trim() || "Name this agent"}
+              </h2>
+              <p className="truncate font-mono text-[11px] text-muted-foreground">{agent.slug || "—"}</p>
             </div>
           </div>
 
-          {isEntry && <FrontmatterEditor agent={agent} />}
+          <div className="flex shrink-0 items-center gap-2">
+            {/*
+              Promoted out of the menu. Trying the agent is how you find out
+              whether any of the editing worked, so it should not be two
+              clicks behind a kebab.
+            */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!agent.runtime}
+              title={agent.runtime ? `Try it on ${agent.runtime.model}` : "Bind a model first"}
+              onClick={() => onChat?.(agent)}
+            >
+              <MessageSquare className="size-3.5" aria-hidden />
+              Try this agent
+            </Button>
 
-          <div className="flex min-h-[380px] flex-1 flex-col lg:flex-row">
-            <div className="relative flex min-h-[300px] min-w-0 flex-1 flex-col">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button type="button" variant="outline" size="icon-sm" aria-label="More actions" />}
+              >
+                <MoreVertical className="size-3.5" aria-hidden />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem
+                  disabled={!ready}
+                  onClick={() => {
+                    const copy = fork(agent.id);
+                    if (copy) toast.success(`Forked as “${copy.name}”`);
+                  }}
+                >
+                  <GitFork className="size-3.5" aria-hidden />
+                  Fork
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={!ready}
+                  onClick={() => {
+                    patch(agent.id, { visibility: agent.visibility === "public" ? "private" : "public" });
+                    toast.success(agent.visibility === "public" ? "Unpublished" : "Published");
+                  }}
+                >
+                  <Upload className="size-3.5" aria-hidden />
+                  {agent.visibility === "public" ? "Unpublish" : "Publish"}
+                  {!ready && <span className="ml-auto text-[10px] text-muted-foreground">needs a name</span>}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem disabled={!ready} onClick={() => setDialog("release")}>
+                  <Rocket className="size-3.5" aria-hidden />
+                  {agent.release ? "New release" : "Release"}
+                </DropdownMenuItem>
+                {agent.release && (
+                  <DropdownMenuItem onClick={onDistribute}>
+                    <Boxes className="size-3.5" aria-hidden />
+                    View install
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
+        <AgentHalvesBar
+          agent={agent}
+          onSetup={() => setDialog("model")}
+          onSettings={() => setSettingsOpen(true)}
+          onRelease={() => {
+            if (!ready) {
+              toast.error("Give it a name and some instructions first.");
+              return;
+            }
+            if (agent.release) setReleasesOpen(true);
+            else setDialog("release");
+          }}
+        />
+      </div>
+
+      {/*
+        Three columns, all resizable, any of them able to take the whole width.
+
+        The assistant is a sibling of the editor COLUMN, not a child of its
+        body — it starts at the top of the card, level with the file toolbar.
+        A conversation that begins halfway down reads as an attachment to the
+        file rather than a peer of it.
+      */}
+      <div className="flex min-h-[460px] flex-col overflow-hidden rounded-xl border border-border bg-card lg:flex-row">
+        {focus !== "editor" && focus !== "assistant" && (
+          <>
+            <div
+              style={focus === "folder" ? undefined : { width: folderW }}
+              className={cn(
+                "flex w-full shrink-0 flex-col border-b border-border lg:border-b-0",
+                assist && "hidden lg:flex",
+                focus === "folder" ? "lg:w-full" : "lg:border-r",
+              )}
+            >
+              <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
+                <span className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
+                  Folder
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={focus === "folder" ? "Restore layout" : "Focus the folder"}
+                  aria-pressed={focus === "folder"}
+                  onClick={() => setFocus(focus === "folder" ? null : "folder")}
+                >
+                  {focus === "folder" ? (
+                    <Minimize2 className="size-3" aria-hidden />
+                  ) : (
+                    <Maximize2 className="size-3" aria-hidden />
+                  )}
+                </Button>
+              </div>
+              <div className="flex flex-1 flex-col overflow-y-auto p-2">
+                <FileTree
+                  files={agent.files}
+                  folders={agent.folders}
+                  activePath={activeFile.path}
+                  onSelect={setActivePath}
+                  onAction={onFileAction}
+                  onCreate={createInline}
+                  onRename={renameInline}
+                  onMove={moveInline}
+                  onCreateSuggested={(path, seed) => {
+                    addFile(agent.id, path, seed);
+                    setActivePath(path);
+                  }}
+                />
+              </div>
+            </div>
+            {focus === null && (
+              <Resizer
+                label="Resize folder panel"
+                onDrag={(dx) => setFolderW((w) => Math.min(420, Math.max(150, w + dx)))}
+              />
+            )}
+          </>
+        )}
+
+        {focus !== "folder" && focus !== "assistant" && (
+          <div className={cn("flex min-w-0 flex-1 flex-col", assist && "hidden lg:flex")}>
+            <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
+              <span className="truncate font-mono text-[11px] text-muted-foreground">
+                {activeFile.path}
+              </span>
+              {isEntry && <Badge variant="outline">entrypoint</Badge>}
+
+              <div className="ml-auto flex items-center gap-2">
+                <div className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5">
+                  {[
+                    { id: "edit", label: "Edit", icon: PenLine },
+                    { id: "preview", label: "Preview", icon: Eye },
+                  ].map((m) => (
+                    <Button
+                      key={m.id}
+                      type="button"
+                      size="xs"
+                      variant={mode === m.id ? "secondary" : "ghost"}
+                      onClick={() => setMode(m.id)}
+                      aria-pressed={mode === m.id}
+                      disabled={!isMarkdown && m.id === "preview"}
+                      title={!isMarkdown && m.id === "preview" ? "Preview is for markdown files" : undefined}
+                    >
+                      <m.icon className="size-3" aria-hidden />
+                      {m.label}
+                    </Button>
+                  ))}
+                </div>
+
+                <Button
+                  type="button"
+                  size="xs"
+                  variant={assist ? "secondary" : "outline"}
+                  aria-pressed={assist}
+                  onClick={() => setAssist((v) => !v)}
+                  title="Ask for changes to this agent"
+                >
+                  <Sparkles className="size-3" aria-hidden />
+                  Assistant
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={focus === "editor" ? "Restore layout" : "Focus the editor"}
+                  aria-pressed={focus === "editor"}
+                  onClick={() => setFocus(focus === "editor" ? null : "editor")}
+                >
+                  {focus === "editor" ? (
+                    <Minimize2 className="size-3" aria-hidden />
+                  ) : (
+                    <Maximize2 className="size-3" aria-hidden />
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            {isEntry && <FrontmatterEditor agent={agent} />}
+
+            <div className="relative flex min-h-[300px] flex-1 flex-col">
               {mode === "preview" && isMarkdown ? (
                 <div className="min-h-[300px] flex-1 overflow-y-auto bg-muted/20">
                   <MarkdownPreview source={content} />
@@ -349,7 +417,6 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, seedP
                     placeholder={isEntry ? SCAFFOLD : undefined}
                     className="min-h-[300px] flex-1 resize-none rounded-none border-0 bg-transparent font-mono text-[11px] leading-5 focus-visible:ring-0"
                   />
-                  {/* Typing ./ or ../ offers what is actually in the folder. */}
                   <PathSuggest
                     textareaRef={textareaRef}
                     value={content}
@@ -372,24 +439,40 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, seedP
               )}
             </div>
 
-            {assist && (
-              <div className="flex min-h-[300px] w-full shrink-0 flex-col border-t border-border lg:w-[380px] lg:border-t-0 lg:border-l">
-                <AssistantPanel
-                  agent={agent}
-                  seedPrompt={seedPrompt}
-                  onClose={() => setAssist(false)}
-                  embedded
-                />
-              </div>
-            )}
+            <p className="shrink-0 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
+              {isEntry
+                ? "This file is the agent. Everything else in the folder supports it."
+                : "Loaded alongside the entrypoint when this agent runs."}
+            </p>
           </div>
+        )}
 
-          <p className="border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
-            {isEntry
-              ? "This file is the agent. Everything else in the folder supports it."
-              : "Loaded alongside the entrypoint when this agent runs."}
-          </p>
-        </div>
+        {assist && focus !== "folder" && focus !== "editor" && (
+          <>
+            {focus === null && (
+              <Resizer
+                label="Resize assistant panel"
+                onDrag={(dx) => setAssistW((w) => Math.min(640, Math.max(280, w - dx)))}
+              />
+            )}
+            <div
+              style={focus === "assistant" ? undefined : { width: assistW }}
+              className={cn(
+                "flex w-full min-w-0 shrink-0 flex-col",
+                focus === "assistant" ? "lg:w-full lg:flex-1" : "lg:border-l lg:border-border",
+              )}
+            >
+              <AssistantPanel
+                agent={agent}
+                seedPrompt={seedPrompt}
+                onClose={() => setAssist(false)}
+                embedded
+                focused={focus === "assistant"}
+                onToggleFocus={() => setFocus(focus === "assistant" ? null : "assistant")}
+              />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Settings live behind the half that owns them, not a third tab. */}
