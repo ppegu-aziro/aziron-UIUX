@@ -120,6 +120,7 @@ function Node({ node, depth, active, onSelect, onMenu, expanded, toggle, dirtyPa
           }
         }}
         onContextMenu={(e) => {
+          // Claim it, so the panel-level handler leaves this node alone.
           e.preventDefault();
           onMenu({ x: e.clientX, y: e.clientY, node });
         }}
@@ -209,20 +210,19 @@ export default function FileTree({
   }, [tree]);
 
   return (
-    <div className="relative">
-      <div
-        role="tree"
-        aria-label="Agent files"
-        className="space-y-0.5"
-        onContextMenu={(e) => {
-          // Right-clicking empty space targets the folder root, so "New file"
-          // is reachable without having to hit an existing node first.
-          if (e.target === e.currentTarget) {
-            e.preventDefault();
-            setMenu({ x: e.clientX, y: e.clientY, node: tree });
-          }
-        }}
-      >
+    <div
+      className="relative flex min-h-full flex-1 flex-col"
+      // The whole panel is the target, not just the rows. Anything that is not
+      // a node falls through to the folder root, so "New file" is reachable
+      // from the empty space below the list — which is where a person aiming
+      // for "somewhere in this folder" actually clicks.
+      onContextMenu={(e) => {
+        if (e.defaultPrevented) return;
+        e.preventDefault();
+        setMenu({ x: e.clientX, y: e.clientY, node: tree });
+      }}
+    >
+      <div role="tree" aria-label="Agent files" className="space-y-0.5">
         {tree.list.map((child) => (
           <Node
             key={child.path}
@@ -258,8 +258,9 @@ export default function FileTree({
             </button>
           ))}
 
-        <div className="h-6" />
       </div>
+
+      <div className="min-h-8 flex-1" aria-hidden />
 
       {menu && (
         <>

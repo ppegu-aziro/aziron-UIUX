@@ -25,13 +25,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { frontmatterFor } from "@/data/agentsV2";
+import { cn } from "@/lib/utils";
 import { useAgentsV2 } from "@/context/AgentsV2Context";
 import { KnowledgeDialog, ModelDialog, ReleaseDialog, ToolsDialog } from "./dialogs";
 import FileTree from "./FileTree";
 import SettingsPanel from "./SettingsPanel";
 import MarkdownPreview from "./MarkdownPreview";
 import AgentHalvesBar from "./AgentHalvesBar";
+import ReleasesPanel from "./ReleasesPanel";
+import FrontmatterEditor from "./FrontmatterEditor";
+import { FileNameDialog, MoveFileDialog } from "./FileDialogs";
 
 /**
  * The agent workspace.
@@ -78,6 +81,9 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onAss
 
   const [dialog, setDialog] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [releasesOpen, setReleasesOpen] = useState(false);
+  // { mode, node, dirs } — one piece of state for every file operation.
+  const [fileOp, setFileOp] = useState(null);
   const [mode, setMode] = useState("edit");
   const [activePath, setActivePath] = useState("AGENT.md");
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -115,31 +121,48 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onAss
   };
 
   const onFileAction = (action, node, dirs) => {
-    const dir = node.dir ? node.path : node.path.split("/").slice(0, -1).join("/");
-    if (action === "newFile") {
-      const name = window.prompt("New file name", "notes.md");
-      if (name) addFile(agent.id, dir ? `${dir}/${name}` : name, `# ${name.replace(/\.\w+$/, "")}\n\n`);
-    } else if (action === "newFolder") {
-      const name = window.prompt("New folder name", "references");
-      if (name) addFolder(agent.id, dir ? `${dir}/${name}` : name);
-    } else if (action === "rename") {
-      const next = window.prompt("Rename to", node.path);
-      if (next && next !== node.path) {
-        renameNode(agent.id, node.path, next);
-        if (activePath === node.path) setActivePath(next);
-      }
-    } else if (action === "duplicate") {
+    if (action === "duplicate") {
       duplicateNode(agent.id, node.path);
-    } else if (action === "move") {
-      const target = window.prompt(`Move into which folder?\n\n${["(root)", ...dirs].join("\n")}`, dirs[0] ?? "");
-      if (target !== null) moveNode(agent.id, node.path, target.trim() === "(root)" ? "" : target.trim());
-    } else if (action === "delete") {
+      return;
+    }
+    if (action === "delete") {
       if (node.path === "AGENT.md") {
         toast.error("AGENT.md is the entrypoint and cannot be deleted.");
         return;
       }
       setPendingDelete(node.path);
+      return;
     }
+    setFileOp({ mode: action, node, dirs });
+  };
+
+  /** Directory the operation is relative to. */
+  const opDir = fileOp
+    ? fileOp.node.dir
+      ? fileOp.node.path
+      : fileOp.node.path.split("/").slice(0, -1).join("/")
+    : "";
+
+  const submitFileOp = (value) => {
+    const { mode, node } = fileOp;
+    if (mode === "newFile") {
+      const path = opDir ? `${opDir}/${value}` : value;
+      addFile(agent.id, path, `# ${value.replace(/\.\w+$/, "")}
+
+`);
+      setActivePath(path);
+    } else if (mode === "newFolder") {
+      addFolder(agent.id, opDir ? `${opDir}/${value}` : value);
+    } else if (mode === "rename") {
+      renameNode(agent.id, node.path, value);
+      if (activePath === node.path) setActivePath(value);
+    } else if (mode === "move") {
+      moveNode(agent.id, node.path, value);
+      const base = node.path.split("/").pop();
+      const next = value ? `${value}/${base}` : base;
+      if (activePath === node.path) setActivePath(next);
+    }
+    setFileOp(null);
   };
 
   return (
@@ -151,22 +174,23 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onAss
             <ArrowLeft className="size-4" aria-hidden />
           </Button>
           <div className="min-w-0 flex-1">
-            {/* You type where you read. A separate Name field plus a Save
-                button was three steps to do the most obvious thing on screen. */}
-            <Input
-              value={agent.name}
-              onChange={(e) => patch(agent.id, { name: e.target.value })}
-              placeholder="Name this agent"
-              aria-label="Agent name"
-              className="h-auto border-0 bg-transparent px-0 text-xl font-semibold tracking-tight shadow-none focus-visible:ring-0"
-            />
-            <Input
-              value={agent.description}
-              onChange={(e) => patch(agent.id, { description: e.target.value })}
-              placeholder="One line on what it does — shown in the catalog"
-              aria-label="Agent description"
-              className="mt-0.5 h-auto border-0 bg-transparent px-0 text-xs text-muted-foreground shadow-none focus-visible:ring-0"
-            />
+            {/*
+              Read-only here. Name, description, category and targets are
+              frontmatter, and frontmatter is edited in the file it belongs to
+              — duplicating them in the header meant two places to change one
+              value, and neither looked like what ends up on disk.
+            */}
+            <h2
+              className={cn(
+                "truncate text-xl font-semibold tracking-tight",
+                agent.name.trim() ? "text-foreground" : "text-muted-foreground italic",
+              )}
+            >
+              {agent.name.trim() || "Name this agent"}
+            </h2>
+            <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+              {agent.slug || "—"}
+            </p>
           </div>
         </div>
 
@@ -240,14 +264,23 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onAss
         agent={agent}
         onSetup={() => setDialog("model")}
         onSettings={() => setSettingsOpen(true)}
-        onRelease={() =>
-          ready ? setDialog("release") : toast.error("Give it a name and some instructions first.")
-        }
+        onRelease={() => {
+          if (!ready) {
+            toast.error("Give it a name and some instructions first.");
+            return;
+          }
+          // Released agents open their history; unreleased ones have no history
+          // to show, so they go straight to the dialog.
+          if (agent.release) setReleasesOpen(true);
+          else setDialog("release");
+        }}
       />
 
       {/* ── The folder, and the file you picked ──────────────────────────── */}
       <div className="flex min-h-[460px] flex-col overflow-hidden rounded-xl border border-border bg-card sm:flex-row">
-        <div className="w-full shrink-0 border-b border-border p-2 sm:w-[220px] sm:border-r sm:border-b-0">
+        {/* flex column so the tree can fill the panel and make the empty space
+            below the last file a real right-click target. */}
+        <div className="flex w-full shrink-0 flex-col border-b border-border p-2 sm:w-[220px] sm:border-r sm:border-b-0">
           <p className="mb-1.5 px-2 text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
             Folder
           </p>
@@ -290,11 +323,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onAss
             </div>
           </div>
 
-          {isEntry && (
-            <pre className="border-b border-border bg-muted/40 px-3 py-2 font-mono text-[10px] leading-4 text-muted-foreground">
-              {frontmatterFor(agent)}
-            </pre>
-          )}
+          {isEntry && <FrontmatterEditor agent={agent} />}
 
           {mode === "preview" && isMarkdown ? (
             <div className="min-h-[360px] flex-1 overflow-y-auto bg-muted/20">
@@ -329,6 +358,42 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onAss
           </div>
         </SheetContent>
       </Sheet>
+
+      <Sheet open={releasesOpen} onOpenChange={setReleasesOpen}>
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
+          <SheetHeader>
+            <SheetTitle>Runs anywhere — releases</SheetTitle>
+          </SheetHeader>
+          <div className="px-4 pb-6">
+            <ReleasesPanel
+              agent={agent}
+              onRelease={() => {
+                setReleasesOpen(false);
+                setDialog("release");
+              }}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <FileNameDialog
+        key={`name-${fileOp?.mode}-${fileOp?.node.path ?? ""}`}
+        open={Boolean(fileOp) && fileOp.mode !== "move"}
+        mode={fileOp?.mode}
+        initial={fileOp?.mode === "rename" ? fileOp.node.path : ""}
+        existing={agent.files.map((f) => f.path).concat(agent.folders)}
+        onSubmit={submitFileOp}
+        onClose={() => setFileOp(null)}
+      />
+
+      <MoveFileDialog
+        key={`move-${fileOp?.node.path ?? ""}`}
+        open={fileOp?.mode === "move"}
+        path={fileOp?.node.path}
+        folders={fileOp?.dirs ?? []}
+        onSubmit={submitFileOp}
+        onClose={() => setFileOp(null)}
+      />
 
       {dialog === "model" && <ModelDialog agent={agent} open onOpenChange={() => setDialog(null)} />}
       {dialog === "tools" && <ToolsDialog agent={agent} open onOpenChange={() => setDialog(null)} />}
