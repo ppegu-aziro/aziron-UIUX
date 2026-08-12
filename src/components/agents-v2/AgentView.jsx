@@ -159,6 +159,9 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
   const named = Boolean(agent.name.trim());
   const hasBody = Boolean(agent.files.find((f) => f.path === "AGENT.md")?.content.trim());
   const ready = named && hasBody;
+  // Say which half is missing. "needs a name" on an agent that has one but no
+  // instructions sends the reader to fix something that is not wrong.
+  const notReadyWhy = !named ? "needs a name" : !hasBody ? "needs instructions" : "";
 
   const writeFile = (next) => {
     const path = activeFile.path;
@@ -239,7 +242,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
           onSettings={() => setSettingsOpen(true)}
           onRelease={() => {
             if (!ready) {
-              toast.error("Give it a name and some instructions first.");
+              toast.error(`Cannot release — it ${notReadyWhy}.`);
               return;
             }
             if (agent.release) setReleasesOpen(true);
@@ -286,7 +289,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
               >
                 <Upload className="size-3.5" aria-hidden />
                 {agent.visibility === "public" ? "Unpublish" : "Publish"}
-                {!ready && <span className="ml-auto text-[10px] text-muted-foreground">needs a name</span>}
+                {!ready && <span className="ml-auto text-[10px] text-muted-foreground">{notReadyWhy}</span>}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem disabled={!ready} onClick={() => setDialog("release")}>
