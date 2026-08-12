@@ -141,7 +141,7 @@ function AgentMenu({ agent, onChat, onEdit, onFork, onPublish, onDelete }) {
       <DropdownMenuContent align="end" className="w-44" onClick={(e) => e.stopPropagation()}>
         <DropdownMenuItem onClick={() => onChat(agent)}>
           <MessageSquare className="size-3.5" aria-hidden />
-          Try this agent
+          Chat
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onEdit(agent)}>
           <Pencil className="size-3.5" aria-hidden />
@@ -196,7 +196,7 @@ function AgentCard({ agent, actions }) {
             type="button"
             variant="ghost"
             size="icon-sm"
-            aria-label={`Try ${agent.name || "unnamed agent"}`}
+            aria-label={`Chat with ${agent.name || "unnamed agent"}`}
             onClick={(e) => {
               e.stopPropagation();
               actions.onChat(agent);

@@ -8,6 +8,7 @@ import {
   MessageSquare,
   MoreVertical,
   Rocket,
+  Save,
   Sparkles,
   Upload,
 } from "lucide-react";
@@ -111,12 +112,50 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
     [agent, activePath],
   );
 
+  /**
+   * Commit whatever is buffered, now.
+   *
+   * Content already autosaves ~300ms after typing stops, so this is not what
+   * makes the work durable — it ends the wait and says so. People want to be
+   * told their draft is safe, and a button that reports state is a better
+   * answer to that than one that pretends to be the only thing writing.
+   *
+   * Deliberately not a release: saving a draft and publishing a version are
+   * different promises, and the second one is in the menu.
+   */
+  const saveNow = () => {
+    if (!agent || !activeFile) return;
+    clearTimeout(flushRef.current);
+    const pending = buffer?.path === activeFile.path && buffer.value !== activeFile.content;
+    if (pending) {
+      saveFiles(agent.id, { [activeFile.path]: buffer.value });
+      toast.success("Draft saved");
+    } else {
+      toast.message("Draft is already saved");
+    }
+  };
+
   useEffect(() => () => clearTimeout(flushRef.current), []);
+
+  // Cmd/Ctrl-S saves the draft instead of offering to save the web page.
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        saveNow();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }); // no dep array: saveNow closes over the current buffer
 
   if (!agent || !activeFile) return null;
 
   const isEntry = activeFile.path === "AGENT.md";
   const content = buffer?.path === activeFile.path ? buffer.value : activeFile.content;
+  // True while a keystroke is still sitting in the debounce. The Save button
+  // exists to end that window on demand rather than to gate the write.
+  const unsaved = buffer?.path === activeFile.path && buffer.value !== activeFile.content;
   const named = Boolean(agent.name.trim());
   const hasBody = Boolean(agent.files.find((f) => f.path === "AGENT.md")?.content.trim());
   const ready = named && hasBody;
@@ -338,6 +377,23 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
               {isEntry && <Badge variant="outline">entrypoint</Badge>}
 
               <div className="ml-auto flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={saveNow}
+                  aria-label={unsaved ? "Save draft" : "Draft saved"}
+                  title={unsaved ? "Save draft (Ctrl/Cmd+S)" : "Draft saved"}
+                  className={`relative ${unsaved ? "text-primary" : "text-muted-foreground"}`}
+                >
+                  <Save className="size-3.5" aria-hidden />
+                  {/* A dot, not a spinner: the wait is 300ms and a spinner
+                      would imply the work might fail. */}
+                  {unsaved && (
+                    <span className="absolute top-1 right-1 size-1.5 rounded-full bg-primary" aria-hidden />
+                  )}
+                </Button>
+
                 <Button
                   type="button"
                   size="xs"
