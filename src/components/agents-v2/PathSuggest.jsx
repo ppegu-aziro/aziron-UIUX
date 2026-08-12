@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { File as FileIcon, FolderClosed } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -21,6 +21,12 @@ export default function PathSuggest({ textareaRef, value, currentPath, files, fo
   // the textarea during render is not allowed and not safe.
   const [state, setState] = useState(null);
 
+  // A completed file path still matches itself, so refresh() would reopen the
+  // list on the very thing that was just chosen. Remember that token and stay
+  // shut until the text moves on. Folders are deliberately not suppressed —
+  // there, reopening IS the point, because the next level should appear.
+  const dismissed = useRef(null);
+
   const refresh = useCallback(() => {
     const el = textareaRef.current;
     if (!el) {
@@ -29,9 +35,15 @@ export default function PathSuggest({ textareaRef, value, currentPath, files, fo
     }
     const found = tokenBehindCaret(value, el.selectionStart ?? 0);
     if (!found) {
+      dismissed.current = null;
       setState(null);
       return;
     }
+    if (found.token === dismissed.current) {
+      setState(null);
+      return;
+    }
+    dismissed.current = null;
     const items = resolveCandidates(found.token, currentPath, files, folders);
     if (!items || items.length === 0) {
       setState(null);
@@ -58,7 +70,10 @@ export default function PathSuggest({ textareaRef, value, currentPath, files, fo
       if (!state || !item) return;
       const upToSlash = state.token.slice(0, state.token.lastIndexOf("/") + 1);
       // A folder keeps its trailing slash so the next level opens straight away.
-      onInsert(state.start, state.start + state.token.length, `${upToSlash}${item.name}${item.isDir ? "/" : ""}`);
+      const inserted = `${upToSlash}${item.name}${item.isDir ? "/" : ""}`;
+      // Picking a file finishes the path; picking a folder does not.
+      dismissed.current = item.isDir ? null : inserted;
+      onInsert(state.start, state.start + state.token.length, inserted);
       setState(null);
     },
     [state, onInsert],
@@ -84,6 +99,7 @@ export default function PathSuggest({ textareaRef, value, currentPath, files, fo
         choose(state.items[state.index]);
       } else if (e.key === "Escape") {
         e.preventDefault();
+        dismissed.current = state.token;
         setState(null);
       }
     };
