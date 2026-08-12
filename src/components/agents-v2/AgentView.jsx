@@ -34,7 +34,6 @@ import MarkdownPreview from "./MarkdownPreview";
 import AgentHalvesBar from "./AgentHalvesBar";
 import ReleasesPanel from "./ReleasesPanel";
 import FrontmatterEditor from "./FrontmatterEditor";
-import { FileNameDialog, MoveFileDialog } from "./FileDialogs";
 
 /**
  * The agent workspace.
@@ -82,8 +81,6 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onAss
   const [dialog, setDialog] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [releasesOpen, setReleasesOpen] = useState(false);
-  // { mode, node, dirs } — one piece of state for every file operation.
-  const [fileOp, setFileOp] = useState(null);
   const [mode, setMode] = useState("edit");
   const [activePath, setActivePath] = useState("AGENT.md");
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -120,49 +117,42 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onAss
     flushRef.current = setTimeout(() => saveFiles(agent.id, { [path]: next }), 300);
   };
 
-  const onFileAction = (action, node, dirs) => {
+  /** Only the two operations that are not inline reach this. */
+  const onFileAction = (action, node) => {
     if (action === "duplicate") {
       duplicateNode(agent.id, node.path);
-      return;
-    }
-    if (action === "delete") {
+    } else if (action === "delete") {
       if (node.path === "AGENT.md") {
         toast.error("AGENT.md is the entrypoint and cannot be deleted.");
         return;
       }
       setPendingDelete(node.path);
-      return;
     }
-    setFileOp({ mode: action, node, dirs });
   };
 
-  /** Directory the operation is relative to. */
-  const opDir = fileOp
-    ? fileOp.node.dir
-      ? fileOp.node.path
-      : fileOp.node.path.split("/").slice(0, -1).join("/")
-    : "";
-
-  const submitFileOp = (value) => {
-    const { mode, node } = fileOp;
-    if (mode === "newFile") {
-      const path = opDir ? `${opDir}/${value}` : value;
-      addFile(agent.id, path, `# ${value.replace(/\.\w+$/, "")}
-
-`);
-      setActivePath(path);
-    } else if (mode === "newFolder") {
-      addFolder(agent.id, opDir ? `${opDir}/${value}` : value);
-    } else if (mode === "rename") {
-      renameNode(agent.id, node.path, value);
-      if (activePath === node.path) setActivePath(value);
-    } else if (mode === "move") {
-      moveNode(agent.id, node.path, value);
-      const base = node.path.split("/").pop();
-      const next = value ? `${value}/${base}` : base;
-      if (activePath === node.path) setActivePath(next);
+  const createInline = (kind, path) => {
+    if (kind === "folder") {
+      addFolder(agent.id, path);
+      return;
     }
-    setFileOp(null);
+    const title = path.split("/").pop().replace(/\.\w+$/, "");
+    addFile(agent.id, path, `# ${title}\n\n`);
+    setActivePath(path);
+  };
+
+  const renameInline = (from, to) => {
+    renameNode(agent.id, from, to);
+    if (activePath === from) setActivePath(to);
+  };
+
+  /** Drag-to-move. Dropping a folder into itself is a no-op, not an error. */
+  const moveInline = (from, toDir) => {
+    if (from === toDir || toDir.startsWith(`${from}/`)) return;
+    const base = from.split("/").pop();
+    const to = toDir ? `${toDir}/${base}` : base;
+    if (to === from) return;
+    moveNode(agent.id, from, toDir);
+    if (activePath === from) setActivePath(to);
   };
 
   return (
@@ -290,6 +280,9 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onAss
             activePath={activeFile.path}
             onSelect={setActivePath}
             onAction={onFileAction}
+            onCreate={createInline}
+            onRename={renameInline}
+            onMove={moveInline}
             onCreateSuggested={(path, seed) => {
               addFile(agent.id, path, seed);
               setActivePath(path);
@@ -375,25 +368,6 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onAss
           </div>
         </SheetContent>
       </Sheet>
-
-      <FileNameDialog
-        key={`name-${fileOp?.mode}-${fileOp?.node.path ?? ""}`}
-        open={Boolean(fileOp) && fileOp.mode !== "move"}
-        mode={fileOp?.mode}
-        initial={fileOp?.mode === "rename" ? fileOp.node.path : ""}
-        existing={agent.files.map((f) => f.path).concat(agent.folders)}
-        onSubmit={submitFileOp}
-        onClose={() => setFileOp(null)}
-      />
-
-      <MoveFileDialog
-        key={`move-${fileOp?.node.path ?? ""}`}
-        open={fileOp?.mode === "move"}
-        path={fileOp?.node.path}
-        folders={fileOp?.dirs ?? []}
-        onSubmit={submitFileOp}
-        onClose={() => setFileOp(null)}
-      />
 
       {dialog === "model" && <ModelDialog agent={agent} open onOpenChange={() => setDialog(null)} />}
       {dialog === "tools" && <ToolsDialog agent={agent} open onOpenChange={() => setDialog(null)} />}

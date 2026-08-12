@@ -1,6 +1,7 @@
 import { Check, Lock } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -57,12 +58,21 @@ export default function FrontmatterEditor({ agent }) {
 
         <div className="flex items-start gap-1">
           <span className={KEY}>description:</span>
-          <Input
+          {/*
+            A textarea, not an input: descriptions run past one line and this
+            is the field the catalog and the model both read, so it should be
+            readable while being written rather than scrolling sideways in a
+            box narrower than the sentence.
+          */}
+          <Textarea
+            rows={2}
             value={agent.description}
             onChange={(e) => patch(agent.id, { description: e.target.value })}
-            placeholder="one line — shown in the catalog"
+            placeholder="what it does — shown in the catalog and used to decide when it is relevant"
             aria-label="description"
-            className={cn(FIELD, "flex-1")}
+            className={cn(
+              "min-h-0 flex-1 resize-y border-0 bg-transparent px-1.5 py-1 font-mono text-[11px] leading-5 shadow-none focus-visible:bg-background focus-visible:ring-1",
+            )}
           />
         </div>
 
