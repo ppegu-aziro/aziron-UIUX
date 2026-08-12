@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import {
-  AlertTriangle,
   Bot,
   Boxes,
   Download,
@@ -32,7 +31,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { CATEGORIES, RUNS_IN_FILTERS, STATUS, VISIBILITY_FILTERS, openToolCount } from "@/data/agentsV2";
+import { CATEGORIES, RUNS_IN_FILTERS, STATUS, VISIBILITY_FILTERS } from "@/data/agentsV2";
 import { useAgentsV2 } from "@/context/AgentsV2Context";
 import { FacetChips } from "./FacetChips";
 
@@ -44,10 +43,8 @@ import { FacetChips } from "./FacetChips";
  * chips. Changing the noun and the layout in one release would make the rename
  * look like a rebuild.
  *
- * No success-rate bar. It measures runs inside Aziron, and most of this list
- * now runs elsewhere or has never run at all — a released-but-never-executed
- * agent would be showing a number with nothing behind it, and a newly created
- * one rendered as a red 0% that read as failure rather than "no runs yet".
+ * No success-rate bar: it measures runs inside Aziron, and most of this list
+ * now runs elsewhere or has never run at all.
  *
  * Clicking a card opens chat, exactly as it does today. Editing is a menu item,
  * because "open" and "configure" are different intents and v1 already settled
@@ -277,11 +274,8 @@ export default function CatalogView({ onChat, onEdit }) {
   const [runsIn, setRunsIn] = useState([]);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState(null);
-  const [openOnly, setOpenOnly] = useState(false);
   const [view, setView] = useState("grid");
   const [pendingDelete, setPendingDelete] = useState(null);
-
-  const openCount = openToolCount(agents);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -291,7 +285,6 @@ export default function CatalogView({ onChat, onEdit }) {
       // OR across selected places: an agent that runs in Claude Code AND Codex
       // should appear under either, not only when both are picked.
       .filter((a) => (runsInTests.length === 0 ? true : runsInTests.some((f) => f.test(a))))
-      .filter((a) => (openOnly ? a.tools === "open" : true))
       .filter((a) => (category ? a.category === category : true))
       .filter(
         (a) =>
@@ -300,18 +293,17 @@ export default function CatalogView({ onChat, onEdit }) {
           a.description.toLowerCase().includes(q) ||
           a.category.toLowerCase().includes(q),
       );
-  }, [agents, visibility, runsIn, query, openOnly, category]);
+  }, [agents, visibility, runsIn, query, category]);
 
   const clearAll = () => {
     setVisibility("all");
     setRunsIn([]);
     setCategory(null);
-    setOpenOnly(false);
     setQuery("");
   };
 
   const hasFilter =
-    visibility !== "all" || runsIn.length > 0 || !!category || openOnly || !!query.trim();
+    visibility !== "all" || runsIn.length > 0 || !!category || !!query.trim();
 
   const actions = {
     onChat,
@@ -437,28 +429,6 @@ export default function CatalogView({ onChat, onEdit }) {
           </button>
         ))}
       </div>
-
-      {/* Governance: the question nothing in the product can answer today. */}
-      {openCount > 0 && (
-        <button
-          type="button"
-          onClick={() => setOpenOnly((v) => !v)}
-          aria-pressed={openOnly}
-          className={cn(
-            "flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-xs transition-colors",
-            openOnly
-              ? "border-warning/40 bg-warning/10 text-foreground"
-              : "border-border bg-muted/30 text-muted-foreground hover:border-warning/30 hover:bg-warning/5",
-          )}
-        >
-          <AlertTriangle className="size-3.5 shrink-0 text-warning" aria-hidden />
-          <span className="flex-1">
-            <span className="font-medium text-foreground">{openCount} agents</span> can use every tool available
-            to the caller.
-          </span>
-          <span className="shrink-0 font-medium text-primary">{openOnly ? "Show all" : "Review these"}</span>
-        </button>
-      )}
 
       <div className="flex items-center gap-2">
         <p className="text-xs text-muted-foreground">
