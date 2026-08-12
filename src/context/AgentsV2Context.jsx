@@ -30,10 +30,23 @@ const ensureFiles = (a) =>
  * payload would otherwise reach a chip with an undefined field and take the
  * whole page down, which is exactly what an unguarded `targets` did.
  */
-function normalise(a) {
-  const granted = a.granted ?? (a.tools === "scoped" ? ALL_TOOLS.slice(0, a.toolCount ?? 0) : []);
+function normalise(a, { hydrating = false } = {}) {
+  // The legacy branch fabricates a permission set from ALL_TOOLS ordering when
+  // `granted` is missing, and it is reachable only from an old localStorage
+  // payload that stored a count instead of a list. With the config editable as
+  // JSON, deleting one line would otherwise silently grant the first N tools —
+  // so outside hydration, absent means none.
+  const granted =
+    a.granted ??
+    (hydrating && a.tools === "scoped" ? ALL_TOOLS.slice(0, a.toolCount ?? 0) : []);
   return {
     ...a,
+    // Spread-only until now, which held while every writer was a form control.
+    // A patch built from a parsed document can carry an explicit undefined, and
+    // object spread copies it — CatalogView's a.name.toLowerCase() then takes
+    // the whole catalog down on a search keystroke.
+    name: a.name ?? "",
+    description: a.description ?? "",
     files: ensureFiles(a),
     folders: a.folders ?? [],
     granted,
@@ -73,11 +86,12 @@ export function AgentsV2Provider({ children }) {
     try {
       const raw = localStorage.getItem(KEY);
       const parsed = raw ? JSON.parse(raw) : null;
-      if (Array.isArray(parsed) && parsed.length) return parsed.map(normalise);
+      if (Array.isArray(parsed) && parsed.length)
+        return parsed.map((a) => normalise(a, { hydrating: true }));
     } catch {
       /* fall through to seed */
     }
-    return AGENTS_V2.map(normalise);
+    return AGENTS_V2.map((a) => normalise(a));
   });
 
   useEffect(() => {
@@ -237,7 +251,7 @@ export function AgentsV2Provider({ children }) {
           };
         }),
 
-      reset: () => setAgents(AGENTS_V2.map(normalise)),
+      reset: () => setAgents(AGENTS_V2.map((a) => normalise(a))),
     }),
     [agents, patch],
   );

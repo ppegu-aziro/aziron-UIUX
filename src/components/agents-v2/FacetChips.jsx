@@ -91,7 +91,11 @@ export function ReleaseChip({ agent, className }) {
  * a chip is the cheapest possible answer, and making it filterable is the rest.
  */
 export function ToolsChip({ agent, className }) {
-  const posture = TOOL_POSTURE[agent.tools];
+  // Falls back rather than indexing blind: with the config editable as JSON,
+  // `"tools": "Open"` is one keystroke away, and an unguarded lookup here takes
+  // down the catalog card, the settings panel and the agent header at once.
+  // Unrecognised reads as "no tools", which is the safe direction to guess.
+  const posture = TOOL_POSTURE[agent.tools] ?? TOOL_POSTURE.none;
   const Icon = agent.tools === "open" ? AlertTriangle : agent.tools === "scoped" ? ShieldCheck : Wrench;
   return (
     <Chip icon={Icon} tone={posture.tone} className={className} title={posture.blurb}>

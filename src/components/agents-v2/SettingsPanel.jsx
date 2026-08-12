@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { API_TOKENS, CATEGORIES, PROVIDERS, TOOL_POSTURE, VECTOR_DBS } from "@/data/agentsV2";
+import { API_TOKENS, CATEGORIES, PROVIDERS, STATUS, TOOL_POSTURE, VECTOR_DBS } from "@/data/agentsV2";
 import { useAgentsV2 } from "@/context/AgentsV2Context";
 import { ToolsChip } from "./FacetChips";
 
@@ -80,6 +80,9 @@ export default function SettingsPanel({ agent, onOpenDialog }) {
   const provider = PROVIDERS.find((p) => p.name === agent.runtime?.provider);
   const tokens = API_TOKENS[agent.runtime?.provider] ?? [];
   const db = VECTOR_DBS.find((d) => d.id === agent.vectorDbId);
+  // Guarded, and looked up once. The posture is editable as raw JSON now, so an
+  // unrecognised value must degrade to a readable panel rather than a blank page.
+  const posture = TOOL_POSTURE[agent.tools] ?? TOOL_POSTURE.none;
 
   const addQuickPrompt = () => {
     if (!qpLabel.trim() || !qpPrompt.trim()) return;
@@ -116,7 +119,7 @@ export default function SettingsPanel({ agent, onOpenDialog }) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {["active", "idle", "error", "disabled"].map((s) => (
+                {Object.keys(STATUS).map((s) => (
                   <SelectItem key={s} value={s} className="capitalize">
                     {s}
                   </SelectItem>
@@ -254,7 +257,7 @@ export default function SettingsPanel({ agent, onOpenDialog }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <ToolsChip agent={agent} />
-            <span className="text-[11px] text-muted-foreground">{TOOL_POSTURE[agent.tools].blurb}</span>
+            <span className="text-[11px] text-muted-foreground">{posture.blurb}</span>
           </div>
           <Button type="button" variant="outline" size="xs" onClick={() => onOpenDialog("tools")}>
             Configure
@@ -446,7 +449,7 @@ export default function SettingsPanel({ agent, onOpenDialog }) {
           {[
             ["Model", agent.runtime ? `${agent.runtime.provider} · ${agent.runtime.model}` : "Not set up"],
             ["Release", agent.release ? `v${agent.release.version} · ${agent.targets.length} targets` : "Not released"],
-            ["Tools", agent.tools === "scoped" ? `${agent.granted.length} granted` : TOOL_POSTURE[agent.tools].label],
+            ["Tools", agent.tools === "scoped" ? `${agent.granted.length} granted` : posture.label],
             ["Knowledge", agent.knowledge.length ? `${agent.knowledge.length} sources` : "None"],
             ["Retrieval", [agent.ragMode && "RAG", agent.vectorSearch && "Vector search"].filter(Boolean).join(", ") || "Off"],
             ["Files", `${agent.files.length}`],

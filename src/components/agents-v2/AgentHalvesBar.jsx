@@ -59,7 +59,8 @@ export default function AgentHalvesBar({ agent, onSetup, onRelease, onSettings }
         agent.runtime.model,
         agent.tools === "scoped"
           ? `${agent.granted.length} tools`
-          : TOOL_POSTURE[agent.tools].label.toLowerCase(),
+          : // Guarded: the posture is user-editable text now, not just a button.
+            (TOOL_POSTURE[agent.tools] ?? TOOL_POSTURE.none).label.toLowerCase(),
         agent.knowledge.length ? `${agent.knowledge.length} sources` : null,
       ]
         .filter(Boolean)
