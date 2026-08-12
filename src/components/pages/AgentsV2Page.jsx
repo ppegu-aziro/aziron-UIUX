@@ -8,6 +8,7 @@ import Sidebar from "@/components/layout/Sidebar";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 import CatalogView from "@/components/agents-v2/CatalogView";
 import AgentView from "@/components/agents-v2/AgentView";
@@ -39,6 +40,7 @@ function AgentsV2Inner({ onNavigate }) {
   const [panel, setPanel] = useState(null); // { type: "chat", id }
   const [expanded, setExpanded] = useState(false);
 
+  const isWorkspace = view === "agent";
   const panelAgent = panel ? get(panel.id) : null;
   const hideMainColumn = Boolean(panelAgent) && expanded;
 
@@ -106,8 +108,19 @@ function AgentsV2Inner({ onNavigate }) {
         >
           <AppHeader onNavigate={onNavigate} />
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="flex flex-col gap-4 px-6 py-4">
+          {/*
+            The catalog is a list and scrolls. The agent workspace is a tool and
+            does not: it fills the viewport so the folder, the file and the
+            assistant each scroll inside their own column, instead of the whole
+            page scrolling and leaving the editor floating in dead space.
+          */}
+          <div className={cn("min-h-0 flex-1", isWorkspace ? "overflow-hidden" : "overflow-y-auto")}>
+            <div
+              className={cn(
+                "flex flex-col gap-3 px-6 py-4",
+                isWorkspace && "h-full min-h-0",
+              )}
+            >
               {/*
                 Only the catalog needs a page title. On an agent, "Agents"
                 sat above a screen whose own header already names the thing
@@ -140,7 +153,7 @@ function AgentsV2Inner({ onNavigate }) {
                 </PageHeader>
               )}
 
-              <div className="pb-12">
+              <div className={cn(isWorkspace ? "flex min-h-0 flex-1 flex-col" : "pb-12")}>
                 {view === "catalog" && (
                   <CatalogView onChat={(a) => openPanel("chat", a)} onEdit={openEditor} />
                 )}

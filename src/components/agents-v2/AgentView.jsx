@@ -206,7 +206,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       {/*
         One row.
 
@@ -216,7 +216,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
         and what has shipped are all the same fact about the same thing, so
         they read as one line.
       */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2">
         <Button type="button" variant="ghost" size="icon-sm" onClick={onBack} aria-label="Back to agents">
           <ArrowLeft className="size-4" aria-hidden />
         </Button>
@@ -312,13 +312,13 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
         A conversation that begins halfway down reads as an attachment to the
         file rather than a peer of it.
       */}
-      <div className="flex min-h-[460px] flex-col overflow-hidden rounded-xl border border-border bg-card lg:flex-row">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card lg:flex-row">
         {focus !== "editor" && focus !== "assistant" && (
           <>
             <div
               style={focus === "folder" ? undefined : { width: folderW }}
               className={cn(
-                "flex w-full shrink-0 flex-col border-b border-border lg:border-b-0",
+                "flex min-h-0 w-full shrink-0 flex-col border-b border-border lg:border-b-0",
                 assist && "hidden lg:flex",
                 focus === "folder" ? "lg:w-full" : "lg:border-r",
               )}
@@ -369,7 +369,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
         )}
 
         {focus !== "folder" && focus !== "assistant" && (
-          <div className={cn("flex min-w-0 flex-1 flex-col", assist && "hidden lg:flex")}>
+          <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", assist && "hidden lg:flex")}>
             <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
               <span className="truncate font-mono text-[11px] text-muted-foreground">
                 {activeFile.path}
@@ -423,16 +423,16 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
               </div>
             </div>
 
-            {isEntry && <FrontmatterEditor agent={agent} />}
+            <div className="shrink-0">{isEntry && <FrontmatterEditor agent={agent} />}</div>
 
-            <div className="relative flex min-h-[300px] flex-1 flex-col">
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
               <Textarea
                 ref={textareaRef}
                 aria-label={`${activeFile.path} content`}
                 value={content}
                 onChange={(e) => writeFile(e.target.value)}
                 placeholder={isEntry ? SCAFFOLD : undefined}
-                className="min-h-[300px] flex-1 resize-none rounded-none border-0 bg-transparent font-mono text-[11px] leading-5 focus-visible:ring-0"
+                className="min-h-0 flex-1 resize-none overflow-y-auto rounded-none border-0 bg-transparent font-mono text-[11px] leading-5 focus-visible:ring-0"
               />
               <PathSuggest
                 textareaRef={textareaRef}
@@ -473,7 +473,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
             <div
               style={focus === "assistant" ? undefined : { width: assistW }}
               className={cn(
-                "flex w-full min-w-0 shrink-0 flex-col",
+                "flex min-h-0 w-full min-w-0 shrink-0 flex-col",
                 focus === "assistant" ? "lg:w-full lg:flex-1" : "lg:border-l lg:border-border",
               )}
             >
