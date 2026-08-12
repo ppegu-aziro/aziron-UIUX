@@ -88,17 +88,20 @@ export function AgentsV2Provider({ children }) {
     }
   }, [agents]);
 
+  const slugify = (name) =>
+    (name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
   const patch = useCallback((id, changes) => {
     setAgents((list) =>
-      list.map((a) =>
-        a.id === id
-          ? normalise({
-              ...a,
-              ...(typeof changes === "function" ? changes(a) : changes),
-              updated: "just now",
-            })
-          : a,
-      ),
+      list.map((a) => {
+        if (a.id !== id) return a;
+        const next = { ...a, ...(typeof changes === "function" ? changes(a) : changes) };
+        // The slug is derived, never stored independently. Renaming without
+        // this left a stale identifier in the catalog, the release dialog's
+        // install path and `aziron agent install <nothing>`.
+        if (next.name !== a.name) next.slug = slugify(next.name);
+        return normalise({ ...next, updated: "just now" });
+      }),
     );
   }, []);
 
@@ -125,6 +128,7 @@ export function AgentsV2Provider({ children }) {
           };
         }),
 
+      setKnowledge: (id, knowledge) => patch(id, { knowledge }),
       setTargets: (id, targets) => patch(id, { targets }),
 
       /* ── lifecycle ────────────────────────────────────────────────────── */
@@ -164,8 +168,8 @@ export function AgentsV2Provider({ children }) {
           description,
           category,
           origin: "both",
-          runtime: { provider: "Automatic", model: "Auto" },
-          apiTokenId: "auto",
+          runtime: null,
+          apiTokenId: "",
           tools: "none",
           granted: [],
           knowledge,

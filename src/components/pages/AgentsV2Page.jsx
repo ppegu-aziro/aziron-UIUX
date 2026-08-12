@@ -13,7 +13,7 @@ import CatalogView from "@/components/agents-v2/CatalogView";
 import AgentView from "@/components/agents-v2/AgentView";
 import DistributeView from "@/components/agents-v2/DistributeView";
 import ChatPanel from "@/components/agents-v2/ChatPanel";
-import GeneratorPanel from "@/components/agents-v2/GeneratorPanel";
+import AssistantPanel from "@/components/agents-v2/AssistantPanel";
 import { AgentsV2Provider, useAgentsV2 } from "@/context/AgentsV2Context";
 
 /**
@@ -37,7 +37,7 @@ function AgentsV2Inner({ onNavigate }) {
   const { get, create, remove, reset } = useAgentsV2();
   const [view, setView] = useState("catalog");
   const [agentId, setAgentId] = useState(null);
-  const [panel, setPanel] = useState(null); // { type: "chat" | "generate", id }
+  const [panel, setPanel] = useState(null); // { type: "chat" | "assistant", id, seed? }
   const [expanded, setExpanded] = useState(false);
 
   const panelAgent = panel ? get(panel.id) : null;
@@ -67,25 +67,30 @@ function AgentsV2Inner({ onNavigate }) {
     setExpanded(false);
   };
 
+  const blankDraft = () =>
+    create({ name: "", description: "", instructions: "", files: [{ path: "AGENT.md", content: "" }] });
+
   /**
-   * New agent: an empty, unnamed draft, opened in the editor ready to type in.
+   * Start blank: an empty, unnamed draft opened ready to type in.
    *
-   * Nothing is named for you. A placeholder name like "Untitled agent" is a
-   * decision the product made on the user's behalf, and it survives into the
-   * catalog, the slug and the release unless someone remembers to change it.
-   * The field starts empty and says what it wants instead.
-   *
-   * The generator is not opened either. Writing by hand is the baseline and
-   * generating is the assist; auto-opening it reverses that.
+   * Nothing is named for you — a placeholder name survives into the catalog,
+   * the slug and the release unless someone remembers to change it. The
+   * Assistant is not opened either; this is the hand-authoring path.
    */
-  const newAgent = () => {
-    const record = create({
-      name: "",
-      description: "",
-      instructions: "",
-      files: [{ path: "AGENT.md", content: "" }],
-    });
-    openEditor(record);
+  const startBlank = () => openEditor(blankDraft());
+
+  /**
+   * Create from a sentence typed on the catalog.
+   *
+   * Stating intent and getting a draft are one action rather than two screens:
+   * the sentence becomes the Assistant's first turn, so by the time the
+   * workspace paints, the files are already being written.
+   */
+  const createFromIntent = (text) => {
+    const record = blankDraft();
+    setAgentId(record.id);
+    setView("agent");
+    setPanel({ type: "assistant", id: record.id, seed: text });
   };
 
   /**
@@ -146,7 +151,7 @@ function AgentsV2Inner({ onNavigate }) {
                       <Boxes className="size-3" aria-hidden />
                       concept · v2
                     </Badge>
-                    <Button type="button" size="sm" onClick={newAgent}>
+                    <Button type="button" size="sm" onClick={startBlank}>
                       <Plus className="size-3.5" aria-hidden />
                       New agent
                     </Button>
@@ -156,7 +161,12 @@ function AgentsV2Inner({ onNavigate }) {
 
               <div className="pb-12">
                 {view === "catalog" && (
-                  <CatalogView onChat={(a) => openPanel("chat", a)} onEdit={openEditor} />
+                  <CatalogView
+                    onChat={(a) => openPanel("chat", a)}
+                    onEdit={openEditor}
+                    onCreateFromIntent={createFromIntent}
+                    onStartBlank={startBlank}
+                  />
                 )}
 
                 {view === "agent" && agentId && (
@@ -166,7 +176,10 @@ function AgentsV2Inner({ onNavigate }) {
                     onBack={leaveEditor}
                     onDistribute={() => setView("distribute")}
                     onChat={(a) => openPanel("chat", a)}
-                    onGenerate={(a) => openPanel("generate", a)}
+                    onAssistant={(a) =>
+                      panel?.type === "assistant" ? closePanel() : openPanel("assistant", a)
+                    }
+                    assistantOpen={panel?.type === "assistant"}
                   />
                 )}
 
@@ -188,13 +201,12 @@ function AgentsV2Inner({ onNavigate }) {
               onToggleExpand={() => setExpanded((v) => !v)}
             />
           )}
-          {panelAgent && panel.type === "generate" && (
-            <GeneratorPanel
-              key={`generate-${panelAgent.id}`}
+          {panelAgent && panel.type === "assistant" && (
+            <AssistantPanel
+              key={`assistant-${panelAgent.id}`}
               agent={panelAgent}
+              seedPrompt={panel.seed}
               onClose={closePanel}
-              isExpanded={expanded}
-              onToggleExpand={() => setExpanded((v) => !v)}
             />
           )}
         </AnimatePresence>

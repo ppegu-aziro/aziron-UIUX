@@ -1,166 +1,119 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
-  Boxes,
-  Cpu,
-  Database,
-  FileCode,
+  Eye,
   GitFork,
-  History,
   MessageSquare,
-  Pencil,
+  MoreVertical,
+  PenLine,
   Rocket,
-  RotateCcw,
-  Save,
-  ShieldCheck,
-  SlidersHorizontal,
-  Upload,
   Sparkles,
-  Wrench,
+  Upload,
 } from "lucide-react";
-import { Eye, PenLine } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
-import { TARGET_BY_ID, TOOL_POSTURE, frontmatterFor } from "@/data/agentsV2";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { frontmatterFor } from "@/data/agentsV2";
 import { useAgentsV2 } from "@/context/AgentsV2Context";
-import { ToolsChip } from "./FacetChips";
 import { KnowledgeDialog, ModelDialog, ReleaseDialog, ToolsDialog } from "./dialogs";
 import FileTree from "./FileTree";
 import SettingsPanel from "./SettingsPanel";
 import MarkdownPreview from "./MarkdownPreview";
+import AgentHalvesBar from "./AgentHalvesBar";
 
 /**
- * The agent screen.
+ * The agent workspace.
  *
- * Three tabs rather than a wizard: Instructions (what it does), Files (the
- * folder it ships), Settings (how it runs here). The two halves live in the
- * right rail where they are always visible without competing for the header.
+ * Not a tabbed editor. Three tabs asserted that Instructions, Files and
+ * Settings were parallel, order-free destinations — which handed a nine-section
+ * configuration form to someone who had not yet written a sentence, and hid the
+ * folder behind a tab even though the folder IS the agent.
+ *
+ * So: the folder is permanently on the left, the file you picked fills the
+ * middle, the two halves sit under the header, and configuration is a sheet
+ * opened from the half that owns it.
+ *
+ * Everything commits as you type. There is no Save. Two writers — you and the
+ * Assistant — write to the same store, so a generation cannot be clobbered by a
+ * stale save, and the panel's premise (watch the files change) is literally
+ * true rather than a sync promise you have to trust.
  */
 
-const RAIL = "w-full shrink-0 lg:w-[290px]";
+/** The folder contract, taught as a placeholder: never saved, never released. */
+const SCAFFOLD = `#
+One sentence on what this agent does.
 
-function RailSection({ icon: Icon, title, action, children, dashed }) {
-  return (
-    <section
-      className={cn(
-        "rounded-xl border bg-card p-3.5",
-        dashed ? "border-dashed border-border bg-muted/20" : "border-border",
-      )}
-    >
-      <header className="mb-2.5 flex items-center justify-between gap-2">
-        <h3 className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-foreground uppercase">
-          <Icon className="size-3.5 text-muted-foreground" aria-hidden />
-          {title}
-        </h3>
-        {action}
-      </header>
-      {children}
-    </section>
-  );
-}
+## How to answer
+- The rules it follows every time. Two or three is plenty.
 
-const EditBtn = ({ onClick, label }) => (
-  <Button type="button" variant="ghost" size="icon-sm" onClick={onClick} aria-label={label}>
-    <Pencil className="size-3" aria-hidden />
-  </Button>
-);
+## When to ask first
+- What it must never guess at.`;
 
-const Row = ({ label, value, mono }) => (
-  <div className="flex items-baseline justify-between gap-3 py-1">
-    <span className="text-xs text-muted-foreground">{label}</span>
-    <span className={cn("truncate text-xs font-medium text-foreground", mono && "font-mono")}>{value}</span>
-  </div>
-);
-
-/** Edit / Preview switch, shared by both editing surfaces. */
-function ModeToggle({ mode, setMode, disabled }) {
-  return (
-    <div className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5">
-      {[
-        { id: "edit", label: "Edit", icon: PenLine },
-        { id: "preview", label: "Preview", icon: Eye },
-      ].map((m) => (
-        <Button
-          key={m.id}
-          type="button"
-          size="xs"
-          variant={mode === m.id ? "secondary" : "ghost"}
-          onClick={() => setMode(m.id)}
-          aria-pressed={mode === m.id}
-          disabled={disabled && m.id === "preview"}
-          title={disabled && m.id === "preview" ? "Preview is for markdown files" : undefined}
-        >
-          <m.icon className="size-3" aria-hidden />
-          {m.label}
-        </Button>
-      ))}
-    </div>
-  );
-}
-
-const TABS = [
-  { id: "instructions", label: "Instructions", icon: SlidersHorizontal },
-  { id: "files", label: "Files", icon: FileCode },
-  { id: "settings", label: "Settings", icon: Wrench },
-];
-
-export default function AgentView({ agentId, onBack, onDistribute, onChat, onGenerate }) {
-  const { get, patch, fork, saveFiles, addFile, addFolder, renameNode, deleteNode, duplicateNode, moveNode } =
-    useAgentsV2();
+export default function AgentView({ agentId, onBack, onDistribute, onChat, onAssistant, assistantOpen }) {
+  const {
+    get,
+    patch,
+    fork,
+    saveFiles,
+    addFile,
+    addFolder,
+    renameNode,
+    deleteNode,
+    duplicateNode,
+    moveNode,
+  } = useAgentsV2();
   const agent = get(agentId);
 
-  const [tab, setTab] = useState("instructions");
   const [dialog, setDialog] = useState(null);
-  // Edit vs Preview, the way a markdown editor does it. Kept per-screen rather
-  // than per-file so toggling does not reset every time you pick a file.
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [mode, setMode] = useState("edit");
-
-  // Identity draft — committed on Save so a half-typed name never reaches the
-  // catalog. Initial state, not an effect: the page keys this by agentId.
-  const [draft, setDraft] = useState(() =>
-    agent ? { name: agent.name, description: agent.description } : null,
-  );
-
-  // File content drafts, keyed by path. Structural operations commit
-  // immediately; content waits for Save draft.
-  const [edits, setEdits] = useState({});
   const [activePath, setActivePath] = useState("AGENT.md");
+  const [pendingDelete, setPendingDelete] = useState(null);
 
-  const identityDirty = useMemo(
-    () => agent && draft && (draft.name !== agent.name || draft.description !== agent.description),
-    [agent, draft],
+  // Buffer for the file being typed into, flushed to the store shortly after
+  // typing stops. Keeps every keystroke off global state without reintroducing
+  // a Save button someone can forget to press.
+  //
+  // Keyed by path rather than cleared by an effect: switching files then simply
+  // stops matching, which is one fewer render and one fewer thing to get wrong.
+  const [buffer, setBuffer] = useState(null); // { path, value }
+  const flushRef = useRef(null);
+
+  const activeFile = useMemo(
+    () => agent?.files.find((f) => f.path === activePath) ?? agent?.files[0],
+    [agent, activePath],
   );
-  const dirtyPaths = useMemo(
-    () => new Set(Object.keys(edits).filter((p) => edits[p] !== agent?.files.find((f) => f.path === p)?.content)),
-    [edits, agent],
-  );
 
-  if (!agent || !draft) return null;
+  useEffect(() => () => clearTimeout(flushRef.current), []);
 
-  const posture = TOOL_POSTURE[agent.tools];
-  const activeFile = agent.files.find((f) => f.path === activePath) ?? agent.files[0];
-  const activeContent = edits[activeFile?.path] ?? activeFile?.content ?? "";
-  const isEntry = activeFile?.path === "AGENT.md";
-  const isMarkdown = /\.md$/i.test(activeFile?.path ?? "");
+  if (!agent || !activeFile) return null;
 
-  const saveIdentity = () => {
-    patch(agent.id, { name: draft.name.trim() || agent.name, description: draft.description.trim() });
-    toast.success("Saved");
+  const isEntry = activeFile.path === "AGENT.md";
+  const isMarkdown = /\.md$/i.test(activeFile.path);
+  const content = buffer?.path === activeFile.path ? buffer.value : activeFile.content;
+  const named = Boolean(agent.name.trim());
+  const hasBody = Boolean(agent.files.find((f) => f.path === "AGENT.md")?.content.trim());
+  const ready = named && hasBody;
+
+  const writeFile = (next) => {
+    const path = activeFile.path;
+    setBuffer({ path, value: next });
+    clearTimeout(flushRef.current);
+    flushRef.current = setTimeout(() => saveFiles(agent.id, { [path]: next }), 300);
   };
 
-  const saveDraft = () => {
-    saveFiles(agent.id, edits);
-    setEdits({});
-    toast.success(`${dirtyPaths.size} file${dirtyPaths.size === 1 ? "" : "s"} saved`);
-  };
-
-  /** Context-menu actions from the file tree. */
   const onFileAction = (action, node, dirs) => {
     const dir = node.dir ? node.path : node.path.split("/").slice(0, -1).join("/");
     if (action === "newFile") {
@@ -178,412 +131,223 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onGen
     } else if (action === "duplicate") {
       duplicateNode(agent.id, node.path);
     } else if (action === "move") {
-      const target = window.prompt(
-        `Move into which folder?\n\n${["(root)", ...dirs].join("\n")}`,
-        dirs[0] ?? "",
-      );
+      const target = window.prompt(`Move into which folder?\n\n${["(root)", ...dirs].join("\n")}`, dirs[0] ?? "");
       if (target !== null) moveNode(agent.id, node.path, target.trim() === "(root)" ? "" : target.trim());
     } else if (action === "delete") {
       if (node.path === "AGENT.md") {
         toast.error("AGENT.md is the entrypoint and cannot be deleted.");
         return;
       }
-      if (window.confirm(`Delete ${node.path}?`)) {
-        deleteNode(agent.id, node.path);
-        if (activePath === node.path) setActivePath("AGENT.md");
-      }
+      setPendingDelete(node.path);
     }
   };
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Header */}
+      {/* ── Header: identity, and only the actions that make sense ───────── */}
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
           <Button type="button" variant="ghost" size="icon-sm" onClick={onBack} aria-label="Back to agents">
             <ArrowLeft className="size-4" aria-hidden />
           </Button>
-          <div className="min-w-0">
-            {/* The heading reflects what has been typed; when nothing has,
-                it says so rather than standing in a name of its own. */}
-            <h2
-              className={cn(
-                "truncate text-xl font-semibold tracking-tight",
-                draft.name.trim() ? "text-foreground" : "text-muted-foreground italic",
-              )}
-            >
-              {draft.name.trim() || "Name this agent"}
-            </h2>
-            <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-              {agent.slug || "—"}
-            </p>
+          <div className="min-w-0 flex-1">
+            {/* You type where you read. A separate Name field plus a Save
+                button was three steps to do the most obvious thing on screen. */}
+            <Input
+              value={agent.name}
+              onChange={(e) => patch(agent.id, { name: e.target.value })}
+              placeholder="Name this agent"
+              aria-label="Agent name"
+              className="h-auto border-0 bg-transparent px-0 text-xl font-semibold tracking-tight shadow-none focus-visible:ring-0"
+            />
+            <Input
+              value={agent.description}
+              onChange={(e) => patch(agent.id, { description: e.target.value })}
+              placeholder="One line on what it does — shown in the catalog"
+              aria-label="Agent description"
+              className="mt-0.5 h-auto border-0 bg-transparent px-0 text-xs text-muted-foreground shadow-none focus-visible:ring-0"
+            />
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => onChat?.(agent)}>
-            <MessageSquare className="size-3.5" aria-hidden />
-            Chat
-          </Button>
+        <div className="flex shrink-0 items-center gap-2">
           <Button
             type="button"
-            variant="outline"
+            variant={assistantOpen ? "secondary" : "outline"}
             size="sm"
-            onClick={() => {
-              const copy = fork(agent.id);
-              if (copy) toast.success(`Forked as “${copy.name}”`);
-            }}
+            aria-pressed={assistantOpen}
+            onClick={() => onAssistant?.(agent)}
           >
-            <GitFork className="size-3.5" aria-hidden />
-            Fork
+            <Sparkles className="size-3.5" aria-hidden />
+            Assistant
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              patch(agent.id, { visibility: agent.visibility === "public" ? "private" : "public" });
-              toast.success(agent.visibility === "public" ? "Unpublished" : "Published");
-            }}
-          >
-            <Upload className="size-3.5" aria-hidden />
-            {agent.visibility === "public" ? "Unpublish" : "Publish"}
-          </Button>
-          <Button type="button" size="sm" onClick={() => setDialog("release")}>
-            <Rocket className="size-3.5" aria-hidden />
-            {agent.release ? "New release" : "Release"}
-          </Button>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<Button type="button" variant="outline" size="icon-sm" aria-label="More actions" />}
+            >
+              <MoreVertical className="size-3.5" aria-hidden />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              {/*
+                Disabled with a stated reason. An empty, unnamed draft could
+                previously be chatted with, forked, published and released —
+                four ways to make a mess out of nothing.
+              */}
+              <DropdownMenuItem disabled={!agent.runtime} onClick={() => onChat?.(agent)}>
+                <MessageSquare className="size-3.5" aria-hidden />
+                Chat
+                {!agent.runtime && <span className="ml-auto text-[10px] text-muted-foreground">no model</span>}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!ready}
+                onClick={() => {
+                  const copy = fork(agent.id);
+                  if (copy) toast.success(`Forked as “${copy.name}”`);
+                }}
+              >
+                <GitFork className="size-3.5" aria-hidden />
+                Fork
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={!ready}
+                onClick={() => {
+                  patch(agent.id, { visibility: agent.visibility === "public" ? "private" : "public" });
+                  toast.success(agent.visibility === "public" ? "Unpublished" : "Published");
+                }}
+              >
+                <Upload className="size-3.5" aria-hidden />
+                {agent.visibility === "public" ? "Unpublish" : "Publish"}
+                {!ready && <span className="ml-auto text-[10px] text-muted-foreground">needs a name</span>}
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!ready} onClick={() => setDialog("release")}>
+                <Rocket className="size-3.5" aria-hidden />
+                {agent.release ? "New release" : "Release"}
+              </DropdownMenuItem>
+              {agent.release && (
+                <DropdownMenuItem onClick={onDistribute}>
+                  <Rocket className="size-3.5" aria-hidden />
+                  View install
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
-      <div className="flex flex-col gap-4 lg:flex-row">
-        <div className="min-w-0 flex-1">
-          {/*
-            Tabs, and Generate beside them.
+      <AgentHalvesBar
+        agent={agent}
+        onSetup={() => setDialog("model")}
+        onSettings={() => setSettingsOpen(true)}
+        onRelease={() =>
+          ready ? setDialog("release") : toast.error("Give it a name and some instructions first.")
+        }
+      />
 
-            The header carries lifecycle actions — chat with it, fork it,
-            publish it, release it. Generating is none of those: it writes
-            into the content these tabs are showing, so it belongs at the
-            same altitude as the content rather than up with the verbs that
-            act on the agent as a whole.
-          */}
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
-              {TABS.map((t) => (
+      {/* ── The folder, and the file you picked ──────────────────────────── */}
+      <div className="flex min-h-[460px] flex-col overflow-hidden rounded-xl border border-border bg-card sm:flex-row">
+        <div className="w-full shrink-0 border-b border-border p-2 sm:w-[220px] sm:border-r sm:border-b-0">
+          <p className="mb-1.5 px-2 text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
+            Folder
+          </p>
+          <FileTree
+            files={agent.files}
+            folders={agent.folders}
+            activePath={activeFile.path}
+            onSelect={setActivePath}
+            onAction={onFileAction}
+            onCreateSuggested={(path, seed) => {
+              addFile(agent.id, path, seed);
+              setActivePath(path);
+            }}
+          />
+        </div>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+            <span className="truncate font-mono text-[11px] text-muted-foreground">{activeFile.path}</span>
+            {isEntry && <Badge variant="outline">entrypoint</Badge>}
+            <div className="ml-auto flex items-center gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5">
+              {[
+                { id: "edit", label: "Edit", icon: PenLine },
+                { id: "preview", label: "Preview", icon: Eye },
+              ].map((m) => (
                 <Button
-                  key={t.id}
+                  key={m.id}
                   type="button"
-                  size="sm"
-                  variant={tab === t.id ? "secondary" : "ghost"}
-                  onClick={() => setTab(t.id)}
-                  aria-pressed={tab === t.id}
+                  size="xs"
+                  variant={mode === m.id ? "secondary" : "ghost"}
+                  onClick={() => setMode(m.id)}
+                  aria-pressed={mode === m.id}
+                  disabled={!isMarkdown && m.id === "preview"}
+                  title={!isMarkdown && m.id === "preview" ? "Preview is for markdown files" : undefined}
                 >
-                  <t.icon className="size-3.5" aria-hidden />
-                  {t.label}
-                  {t.id === "files" && dirtyPaths.size > 0 && (
-                    <span className="ml-1 size-1.5 rounded-full bg-warning" aria-label="Unsaved" />
-                  )}
+                  <m.icon className="size-3" aria-hidden />
+                  {m.label}
                 </Button>
               ))}
             </div>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => onGenerate?.(agent)}
-              title="Open the Agent Generator"
-            >
-              <Sparkles className="size-3.5" aria-hidden />
-              Generate
-            </Button>
           </div>
 
-          {/* ── Instructions ───────────────────────────────────────────── */}
-          {tab === "instructions" && (
-            <div className="space-y-4 rounded-xl border border-border bg-card p-4">
-              <div className="flex items-center justify-end gap-2">
-                {identityDirty && (
-                  <>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="xs"
-                      onClick={() => setDraft({ name: agent.name, description: agent.description })}
-                    >
-                      <RotateCcw className="size-3" aria-hidden />
-                      Discard
-                    </Button>
-                    <Button type="button" size="xs" onClick={saveIdentity}>
-                      Save
-                    </Button>
-                  </>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="ag-name" className="mb-1.5 block text-xs font-medium text-foreground">
-                  Name
-                </label>
-                <Input
-                  id="ag-name"
-                  autoFocus={!agent.name}
-                  placeholder="What is this agent called?"
-                  value={draft.name}
-                  onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-                  className="text-sm"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="ag-desc" className="mb-1.5 block text-xs font-medium text-foreground">
-                  Description
-                </label>
-                <Textarea
-                  id="ag-desc"
-                  rows={2}
-                  value={draft.description}
-                  onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
-                  className="resize-none text-sm"
-                />
-              </div>
-
-              <div>
-                <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-                  <label htmlFor="ag-inst" className="text-xs font-medium text-foreground">
-                    Instructions <span className="font-normal text-muted-foreground">— body of AGENT.md</span>
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <ModeToggle mode={mode} setMode={setMode} />
-                    {dirtyPaths.has("AGENT.md") && (
-                      <Button type="button" size="xs" onClick={saveDraft}>
-                        <Save className="size-3" aria-hidden />
-                        Save draft
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                {mode === "edit" ? (
-                  <Textarea
-                    id="ag-inst"
-                    rows={14}
-                    value={edits["AGENT.md"] ?? agent.files.find((f) => f.path === "AGENT.md")?.content ?? ""}
-                    onChange={(e) => setEdits((s) => ({ ...s, "AGENT.md": e.target.value }))}
-                    className="resize-none font-mono text-xs leading-6"
-                  />
-                ) : (
-                  <div className="min-h-[330px] overflow-y-auto rounded-lg border border-border bg-muted/20">
-                    <MarkdownPreview
-                      source={edits["AGENT.md"] ?? agent.files.find((f) => f.path === "AGENT.md")?.content ?? ""}
-                    />
-                  </div>
-                )}
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  This is the file itself — the Files tab shows the same bytes.
-                </p>
-              </div>
-            </div>
+          {isEntry && (
+            <pre className="border-b border-border bg-muted/40 px-3 py-2 font-mono text-[10px] leading-4 text-muted-foreground">
+              {frontmatterFor(agent)}
+            </pre>
           )}
 
-          {/* ── Files ──────────────────────────────────────────────────── */}
-          {tab === "files" && (
-            <div className="rounded-xl border border-border bg-card">
-              <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-                <p className="text-[11px] text-muted-foreground">
-                  Right-click for new, rename, duplicate, move and delete.
-                </p>
-                <Button type="button" size="xs" onClick={saveDraft} disabled={dirtyPaths.size === 0}>
-                  <Save className="size-3" aria-hidden />
-                  {dirtyPaths.size ? `Save draft (${dirtyPaths.size})` : "Saved"}
-                </Button>
-              </div>
-
-              <div className="flex min-h-[440px] flex-col sm:flex-row">
-                <div className="w-full shrink-0 border-b border-border p-2 sm:w-[210px] sm:border-r sm:border-b-0">
-                  <FileTree
-                    files={agent.files}
-                    folders={agent.folders}
-                    activePath={activePath}
-                    dirtyPaths={dirtyPaths}
-                    onSelect={setActivePath}
-                    onAction={onFileAction}
-                  />
-                </div>
-
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
-                    <span className="truncate font-mono text-[11px] text-muted-foreground">
-                      {activeFile?.path}
-                    </span>
-                    {isEntry && <Badge variant="outline">entrypoint</Badge>}
-                    <div className="ml-auto">
-                      <ModeToggle mode={mode} setMode={setMode} disabled={!isMarkdown} />
-                    </div>
-                  </div>
-
-                  {isEntry && (
-                    <pre className="border-b border-border bg-muted/40 px-3 py-2 font-mono text-[10px] leading-4 text-muted-foreground">
-                      {frontmatterFor(agent)}
-                      {"\n"}
-                      <span className="text-[9px] italic">
-                        ↑ generated from Settings — edit those, not this
-                      </span>
-                    </pre>
-                  )}
-
-                  {mode === "preview" && isMarkdown ? (
-                    <div className="min-h-[360px] flex-1 overflow-y-auto bg-muted/20">
-                      <MarkdownPreview source={activeContent} />
-                    </div>
-                  ) : (
-                    <Textarea
-                      aria-label={`${activeFile?.path} content`}
-                      value={activeContent}
-                      onChange={(e) => setEdits((s) => ({ ...s, [activeFile.path]: e.target.value }))}
-                      className="min-h-[360px] flex-1 resize-none rounded-none border-0 bg-transparent font-mono text-[11px] leading-5 focus-visible:ring-0"
-                    />
-                  )}
-                </div>
-              </div>
+          {mode === "preview" && isMarkdown ? (
+            <div className="min-h-[360px] flex-1 overflow-y-auto bg-muted/20">
+              <MarkdownPreview source={content} />
             </div>
+          ) : (
+            <Textarea
+              aria-label={`${activeFile.path} content`}
+              value={content}
+              onChange={(e) => writeFile(e.target.value)}
+              placeholder={isEntry ? SCAFFOLD : undefined}
+              className="min-h-[380px] flex-1 resize-none rounded-none border-0 bg-transparent font-mono text-[11px] leading-5 focus-visible:ring-0"
+            />
           )}
 
-          {/* ── Settings ───────────────────────────────────────────────── */}
-          {tab === "settings" && <SettingsPanel agent={agent} onOpenDialog={setDialog} />}
-        </div>
-
-        {/* ── Rails: the two halves ─────────────────────────────────────── */}
-        <div className={cn(RAIL, "space-y-3")}>
-          <RailSection
-            icon={Cpu}
-            title="Runs here"
-            dashed={!agent.runtime}
-            action={agent.runtime && <EditBtn onClick={() => setDialog("model")} label="Change model" />}
-          >
-            {agent.runtime ? (
-              <div className="space-y-0.5">
-                <Row label="Provider" value={agent.runtime.provider} />
-                <Row label="Model" value={agent.runtime.model} />
-                <Separator className="my-2" />
-                <div className="flex items-center justify-between gap-2 py-1">
-                  <span className="text-xs text-muted-foreground">Tools</span>
-                  <div className="flex items-center gap-1">
-                    <ToolsChip agent={agent} />
-                    <EditBtn onClick={() => setDialog("tools")} label="Change tool access" />
-                  </div>
-                </div>
-                <p className="text-[11px] leading-4 text-muted-foreground">{posture.blurb}</p>
-                <Separator className="my-2" />
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Database className="size-3" aria-hidden />
-                    Knowledge
-                  </span>
-                  <EditBtn onClick={() => setDialog("knowledge")} label="Change knowledge" />
-                </div>
-                {agent.knowledge.length ? (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {agent.knowledge.map((k) => (
-                      <Badge key={k} variant="outline" className="max-w-full">
-                        <span className="truncate">{k}</span>
-                      </Badge>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-muted-foreground">Nothing attached.</p>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-xs leading-5 text-muted-foreground">
-                  No model bound, so it cannot be chatted with here. It still installs and runs on its targets.
-                </p>
-                <Button type="button" variant="outline" size="xs" className="w-full" onClick={() => setDialog("model")}>
-                  <Cpu className="size-3" aria-hidden />
-                  Set up a runtime
-                </Button>
-              </div>
-            )}
-          </RailSection>
-
-          <RailSection
-            icon={Boxes}
-            title="Runs anywhere"
-            dashed={!agent.release}
-            action={agent.release && <EditBtn onClick={() => setDialog("release")} label="New release" />}
-          >
-            {agent.release ? (
-              <div className="space-y-0.5">
-                <Row label="Version" value={`v${agent.release.version}`} mono />
-                <Row label="Published" value={agent.release.published} />
-                <Separator className="my-2" />
-                <div className="space-y-1.5">
-                  {agent.targets.map((t) => {
-                    const target = TARGET_BY_ID[t];
-                    if (!target) return null;
-                    return (
-                      <div key={t} className="flex items-center justify-between gap-2">
-                        <span className="truncate text-xs text-foreground">{target.name}</span>
-                        <Badge variant="secondary" className="shrink-0">
-                          {target.format}
-                        </Badge>
-                      </div>
-                    );
-                  })}
-                </div>
-                <Button type="button" variant="ghost" size="xs" className="mt-2 w-full" onClick={onDistribute}>
-                  View install
-                </Button>
-                {agent.releaseNotes?.length > 0 && (
-                  <>
-                    <Separator className="my-2" />
-                    <p className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <History className="size-3" aria-hidden />
-                      History
-                    </p>
-                    {agent.releaseNotes.slice(0, 3).map((r) => (
-                      <div key={r.version} className="text-[11px] text-muted-foreground">
-                        <span className="font-mono text-foreground">v{r.version}</span>
-                        {r.notes ? ` — ${r.notes}` : ""} · {r.at}
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-xs leading-5 text-muted-foreground">
-                  Never released. Releasing snapshots the files at a version so they install outside Aziron.
-                </p>
-                <Button type="button" variant="outline" size="xs" className="w-full" onClick={() => setDialog("release")}>
-                  <Rocket className="size-3" aria-hidden />
-                  Release this agent
-                </Button>
-              </div>
-            )}
-          </RailSection>
-
-          <RailSection icon={ShieldCheck} title="Governance">
-            <div className="space-y-0.5">
-              <Row label="Owner" value={agent.owner} />
-              <Row label="Category" value={agent.category} />
-              <Row label="Visibility" value={agent.visibility === "public" ? "Public" : "Private"} />
-              <Row label="Updated" value={agent.updated} />
-            </div>
-            {agent.tools === "open" && (
-              <p className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/30 bg-warning/10 px-2 py-1.5 text-[11px] leading-4 text-foreground">
-                <Wrench className="mt-0.5 size-3 shrink-0 text-warning" aria-hidden />
-                Unrestricted tool access.
-              </p>
-            )}
-          </RailSection>
+          <p className="border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
+            {isEntry
+              ? "This file is the agent. Everything else in the folder supports it."
+              : "Loaded alongside the entrypoint when this agent runs."}
+          </p>
         </div>
       </div>
+
+      {/* Settings live behind the half that owns them, not a third tab. */}
+      <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
+          <SheetHeader>
+            <SheetTitle>Runs here — settings</SheetTitle>
+          </SheetHeader>
+          <div className="px-4 pb-6">
+            <SettingsPanel agent={agent} onOpenDialog={setDialog} />
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {dialog === "model" && <ModelDialog agent={agent} open onOpenChange={() => setDialog(null)} />}
       {dialog === "tools" && <ToolsDialog agent={agent} open onOpenChange={() => setDialog(null)} />}
       {dialog === "knowledge" && <KnowledgeDialog agent={agent} open onOpenChange={() => setDialog(null)} />}
       {dialog === "release" && <ReleaseDialog agent={agent} open onOpenChange={() => setDialog(null)} />}
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title={`Delete ${pendingDelete}?`}
+          message="This removes the file from the agent's folder."
+          confirmLabel="Delete"
+          onConfirm={() => {
+            deleteNode(agent.id, pendingDelete);
+            if (activePath === pendingDelete) setActivePath("AGENT.md");
+            setPendingDelete(null);
+          }}
+          onCancel={() => setPendingDelete(null)}
+        />
+      )}
     </div>
   );
 }

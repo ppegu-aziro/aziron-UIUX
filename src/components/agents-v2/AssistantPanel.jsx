@@ -5,7 +5,7 @@ import { FileText, Maximize2, Minimize2, Send, Sparkles, X } from "lucide-react"
 import { useAgentsV2 } from "@/context/AgentsV2Context";
 
 /**
- * Agent Generator.
+ * Assistant.
  *
  * Opt-in, never automatic. The editor is what opens; this arrives only when
  * asked for. Writing by hand is the baseline and generating is the assist —
@@ -58,18 +58,33 @@ const body = (name, intent) =>
  * pretending otherwise would set the wrong expectation about what the demo
  * proves. What it does prove is the loop — prompt, files change, edit, repeat.
  */
-function plan(prompt, agent) {
-  const p = prompt.toLowerCase();
-  const fresh = agent.files.length === 1 && agent.files[0].content.trim().length < 40;
+function byIntent(intent, prompt, agent) {
+  if (intent === "references") return plan("add a reference file", agent);
+  if (intent === "preparation") return plan("add machine setup", agent);
+  if (intent === "shorter") return plan("make it shorter", agent);
+  return plan(prompt, agent);
+}
 
-  if (fresh) {
+function plan(prompt, agent, intent) {
+  const p = prompt.toLowerCase();
+  const entry = agent.files.find((f) => f.path === "AGENT.md");
+  // A create only happens on a genuinely blank agent, and an explicit intent
+  // from a suggestion chip always wins over guessing from the text.
+  const blank = !agent.name.trim() && !(entry?.content ?? "").trim();
+
+  if (intent && intent !== "create") {
+    return byIntent(intent, prompt, agent);
+  }
+
+  if (blank && !intent) {
     const name = nameFrom(prompt);
     return {
       kind: "create",
       name,
       description: `${prompt.trim().replace(/\.$/, "")}. Cites the source it used, and says plainly when something is not covered.`,
       files: [{ path: "AGENT.md", content: body(name, prompt) }],
-      say: `Drafted **${name}** with an AGENT.md. Ask for reference files, scripts or machine setup and I'll add them — or edit it directly, it's yours now.`,
+      say: `Drafted an AGENT.md from that. Ask for reference files, scripts or machine setup and I'll add them — or edit it directly, it's yours now.`,
+      proposeName: name,
     };
   }
 
@@ -114,7 +129,6 @@ function plan(prompt, agent) {
   }
 
   // Otherwise: revise the entrypoint, keeping what is there.
-  const entry = agent.files.find((f) => f.path === "AGENT.md");
   const shorter = /\bshort|concise|brief|trim|tighten\b/.test(p);
   const next = shorter
     ? entry.content.split("\n").filter((l) => !l.startsWith("- ")).join("\n").replace(/\n{3,}/g, "\n\n")
@@ -129,7 +143,7 @@ function plan(prompt, agent) {
   };
 }
 
-export default function GeneratorPanel({ agent, onClose, isExpanded = false, onToggleExpand }) {
+export default function AssistantPanel({ agent, onClose, seedPrompt, isExpanded = false, onToggleExpand }) {
   const { patch, addFile, saveFiles } = useAgentsV2();
   const [messages, setMessages] = useState(() => [
     {
@@ -151,24 +165,34 @@ export default function GeneratorPanel({ agent, onClose, isExpanded = false, onT
     return () => clearTimeout(t);
   }, []);
 
+  // A sentence typed on the catalog becomes this conversation's first turn, so
+  // stating intent and getting a draft are one action rather than two screens.
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seedPrompt && !seeded.current) {
+      seeded.current = true;
+      send(seedPrompt);
+    }
+  }, [seedPrompt]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, busy]);
 
   if (!agent) return null;
 
-  const send = async () => {
-    const q = input.trim();
+  const send = async (text, intent) => {
+    const q = (text ?? input).trim();
     if (!q || busy) return;
     setInput("");
     setMessages((m) => [...m, { role: "user", text: q }]);
     setBusy(true);
     await sleep(900);
 
-    const result = plan(q, agent);
+    const result = plan(q, agent, intent);
 
     if (result.kind === "create") {
-      patch(agent.id, { name: result.name, description: result.description });
+      patch(agent.id, { description: result.description });
       saveFiles(agent.id, Object.fromEntries(result.files.map((f) => [f.path, f.content])));
     } else if (result.kind === "add") {
       result.files.forEach((f) => addFile(agent.id, f.path, f.content));
@@ -176,7 +200,17 @@ export default function GeneratorPanel({ agent, onClose, isExpanded = false, onT
       saveFiles(agent.id, Object.fromEntries(result.files.map((f) => [f.path, f.content])));
     }
 
-    setMessages((m) => [...m, { role: "ai", text: result.say, files: result.files.map((f) => f.path) }]);
+    setMessages((m) => [
+      ...m,
+      {
+        role: "ai",
+        text: result.say,
+        files: result.files.map((f) => f.path),
+        // Proposed, never applied. "Nothing is auto-named" holds because the
+        // commit is a click on a reviewable suggestion.
+        proposeName: result.proposeName,
+      },
+    ]);
     setBusy(false);
   };
 
@@ -194,8 +228,8 @@ export default function GeneratorPanel({ agent, onClose, isExpanded = false, onT
           <Sparkles size={16} className="text-primary" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-foreground">Agent Generator</p>
-          <p className="truncate text-xs text-muted-foreground">Writes into this agent&apos;s files</p>
+          <p className="truncate text-sm font-semibold text-foreground">Assistant</p>
+          <p className="truncate text-xs text-muted-foreground">Writes into this agent&apos;s folder</p>
         </div>
         {onToggleExpand && (
           <button
@@ -241,6 +275,28 @@ export default function GeneratorPanel({ agent, onClose, isExpanded = false, onT
                       ),
                   }}
                 />
+                {msg.proposeName && !agent.name.trim() && (
+                  <div className="mt-2.5 flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => patch(agent.id, { name: msg.proposeName })}
+                      className="rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15"
+                    >
+                      Call it &ldquo;{msg.proposeName}&rdquo;
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setMessages((m) =>
+                          m.map((x) => (x === msg ? { ...x, proposeName: null } : x)),
+                        )
+                      }
+                      className="rounded-full border border-border px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      I&apos;ll name it
+                    </button>
+                  </div>
+                )}
                 {msg.files?.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1">
                     {msg.files.map((f) => (
@@ -305,14 +361,18 @@ export default function GeneratorPanel({ agent, onClose, isExpanded = false, onT
             </button>
           </div>
           <div className="flex flex-wrap items-center gap-1 px-3 py-2">
-            {["Add a reference file", "Add machine setup", "Make it shorter"].map((s) => (
+            {[
+              { id: "references", label: "Add a reference file" },
+              { id: "preparation", label: "Add machine setup" },
+              { id: "shorter", label: "Make it shorter" },
+            ].map((s) => (
               <button
-                key={s}
+                key={s.id}
                 type="button"
-                onClick={() => setInput(s)}
+                onClick={() => send(s.label, s.id)}
                 className="rounded-[6px] px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
-                {s}
+                {s.label}
               </button>
             ))}
           </div>

@@ -12,7 +12,9 @@ import {
   MessageSquare,
   MoreVertical,
   Pencil,
+  ArrowRight,
   Search,
+  Sparkles,
   Trash2,
   Upload,
   X,
@@ -46,10 +48,82 @@ import { FacetChips } from "./FacetChips";
  * No success-rate bar: it measures runs inside Aziron, and most of this list
  * now runs elsewhere or has never run at all.
  *
- * Clicking a card opens chat, exactly as it does today. Editing is a menu item,
- * because "open" and "configure" are different intents and v1 already settled
- * which one the click belongs to.
+ * Clicking a card opens the agent. This is an authoring product, and the
+ * default gesture on a card should be the thing a person mid-build wants —
+ * chat is a hover control and a menu item beside it.
  */
+
+const EXAMPLES = [
+  "Answers HR questions from our handbook",
+  "Triages static-analysis findings and files the real ones",
+  "Provisions EKS clusters with eksctl",
+];
+
+/**
+ * The on-ramp.
+ *
+ * Creation starts on the page you are already on, in a box that asks the one
+ * question you can actually answer — what should it do — rather than behind a
+ * button that mints an empty record and drops you in a maintenance screen.
+ *
+ * "Start blank" sits at the same altitude, so the assistant is opt-out rather
+ * than mandatory. Every product that does this well offers the escape at equal
+ * weight; the ones that don't force you to describe your intent to a model
+ * before you are allowed to type.
+ */
+function AgentStarter({ onCreateFromIntent, onStartBlank }) {
+  const [intent, setIntent] = useState("");
+  const submit = () => {
+    const t = intent.trim();
+    if (t) onCreateFromIntent(t);
+  };
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <h2 className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+        <Sparkles className="size-3.5 text-primary" aria-hidden />
+        Create an agent
+      </h2>
+      <p className="mt-0.5 mb-3 text-xs text-muted-foreground">
+        Say what it should do and the assistant drafts the files. You edit everything afterwards.
+      </p>
+
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Input
+          value={intent}
+          onChange={(e) => setIntent(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          placeholder="Describe what this agent should do…"
+          aria-label="Describe what this agent should do"
+          className="h-10 flex-1 text-sm"
+        />
+        <div className="flex items-center gap-2">
+          <Button type="button" size="lg" onClick={submit} disabled={!intent.trim()}>
+            Create
+            <ArrowRight className="size-3.5" data-icon="inline-end" aria-hidden />
+          </Button>
+          <Button type="button" size="lg" variant="ghost" onClick={onStartBlank}>
+            Start blank
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+        <span className="text-[11px] text-muted-foreground">Try:</span>
+        {EXAMPLES.map((e) => (
+          <button
+            key={e}
+            type="button"
+            onClick={() => setIntent(e)}
+            className="rounded-full border border-border bg-muted/40 px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+          >
+            {e}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const GRADIENTS = [
   "from-indigo-500 to-violet-500",
@@ -170,12 +244,12 @@ function AgentCard({ agent, actions }) {
     <div
       role="button"
       tabIndex={0}
-      aria-label={`Chat with ${agent.name || "unnamed agent"}`}
-      onClick={() => actions.onChat(agent)}
+      aria-label={`Open ${agent.name || "unnamed agent"}`}
+      onClick={() => actions.onEdit(agent)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          actions.onChat(agent);
+          actions.onEdit(agent);
         }
       }}
       className="group flex h-full cursor-pointer flex-col rounded-xl border border-border bg-card p-4 transition-all hover:border-primary/40 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
@@ -191,7 +265,22 @@ function AgentCard({ agent, actions }) {
           </div>
           <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{agent.slug}</p>
         </div>
-        <AgentMenu agent={agent} {...actions} />
+        <div className="flex shrink-0 items-center">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Chat with ${agent.name || "unnamed agent"}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              actions.onChat(agent);
+            }}
+            className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+          >
+            <MessageSquare className="size-3.5" aria-hidden />
+          </Button>
+          <AgentMenu agent={agent} {...actions} />
+        </div>
       </div>
 
       <p className="mt-2 line-clamp-2 min-h-[2.5rem] text-xs leading-5 text-muted-foreground">
@@ -229,12 +318,12 @@ function AgentRow({ agent, actions, zebra }) {
     <div
       role="button"
       tabIndex={0}
-      aria-label={`Chat with ${agent.name || "unnamed agent"}`}
-      onClick={() => actions.onChat(agent)}
+      aria-label={`Open ${agent.name || "unnamed agent"}`}
+      onClick={() => actions.onEdit(agent)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          actions.onChat(agent);
+          actions.onEdit(agent);
         }
       }}
       className={cn(
@@ -268,7 +357,7 @@ function AgentRow({ agent, actions, zebra }) {
   );
 }
 
-export default function CatalogView({ onChat, onEdit }) {
+export default function CatalogView({ onChat, onEdit, onCreateFromIntent, onStartBlank }) {
   const { agents, remove, fork, patch } = useAgentsV2();
   const [visibility, setVisibility] = useState("all");
   const [runsIn, setRunsIn] = useState([]);
@@ -321,6 +410,8 @@ export default function CatalogView({ onChat, onEdit }) {
 
   return (
     <div className="flex flex-col gap-3">
+      <AgentStarter onCreateFromIntent={onCreateFromIntent} onStartBlank={onStartBlank} />
+
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[180px] flex-1">

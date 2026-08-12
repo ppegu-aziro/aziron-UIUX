@@ -9,6 +9,7 @@ import {
   FolderOpen,
   FolderPlus,
   Pencil,
+  Plus,
   Trash2,
 } from "lucide-react";
 
@@ -62,6 +63,34 @@ function buildTree(files, folders) {
 
   return sort(root);
 }
+
+/**
+ * Folders an agent can have, shown as dashed ghost rows when absent.
+ *
+ * This is the folder contract taught as a live control rather than in docs:
+ * you learn what `references/` is for by reading one line, and you create it
+ * by clicking the same line. No wizard step, no modal, no README.
+ */
+const SUGGESTED = [
+  {
+    dir: "references",
+    job: "things it reads before answering",
+    seed: "references/background.md",
+    content: `# Background\n\nWhat this agent needs to know before answering.\n`,
+  },
+  {
+    dir: "scripts",
+    job: "commands that run on the target machine",
+    seed: "scripts/run.sh",
+    content: `#!/usr/bin/env bash\nset -euo pipefail\n\necho "ok"\n`,
+  },
+  {
+    dir: ".aziron",
+    job: "setup checks before it runs",
+    seed: ".aziron/preparation.yaml",
+    content: `schema: 1\n\npreparation:\n  precheck:\n    - id: cli\n      label: Required CLI installed\n`,
+  },
+];
 
 const MENU = [
   { id: "newFile", label: "New file", icon: FilePlus, dirOnly: true },
@@ -157,6 +186,7 @@ export default function FileTree({
   dirtyPaths = new Set(),
   onSelect,
   onAction,
+  onCreateSuggested,
 }) {
   const tree = useMemo(() => buildTree(files, folders), [files, folders]);
   const [expanded, setExpanded] = useState(
@@ -206,6 +236,28 @@ export default function FileTree({
             dirtyPaths={dirtyPaths}
           />
         ))}
+        {/* Ghost rows for folders this agent does not have yet. */}
+        {onCreateSuggested &&
+          SUGGESTED.filter(
+            (sug) => !files.some((f) => f.path.startsWith(`${sug.dir}/`)) && !folders.includes(sug.dir),
+          ).map((sug) => (
+            <button
+              key={sug.dir}
+              type="button"
+              onClick={() => onCreateSuggested(sug.seed, sug.content)}
+              title={`Create ${sug.dir}/`}
+              className="group flex w-full items-start gap-1.5 rounded-md border border-dashed border-transparent py-1 pr-2 pl-1.5 text-left transition-colors hover:border-border hover:bg-muted/50"
+            >
+              <Plus className="mt-0.5 size-3 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="min-w-0">
+                <span className="block truncate font-mono text-[11px] text-muted-foreground group-hover:text-foreground">
+                  {sug.dir}/
+                </span>
+                <span className="block text-[10px] leading-3 text-muted-foreground/70">{sug.job}</span>
+              </span>
+            </button>
+          ))}
+
         <div className="h-6" />
       </div>
 
