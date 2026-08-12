@@ -30,6 +30,20 @@ const ICONS = {
   workspace: Sparkles,
 };
 
+/**
+ * How much of the six-column grid each field takes.
+ *
+ * Container queries, not viewport ones: this pane is resizable and halves in
+ * Both mode, so what decides the column count is the width of the pane the
+ * fields are actually in. A viewport breakpoint would put three columns in a
+ * 300px column the moment the window was wide.
+ */
+const SPAN = {
+  sm: "col-span-6 @md:col-span-3 @3xl:col-span-2",
+  md: "col-span-6 @md:col-span-3",
+  lg: "col-span-6",
+};
+
 export default function AgentJsonForm({ agent, onlyChanged, onShowAll, onEdit, onFocusPath, cursorPath }) {
   // Built from the record so the form still renders when the text is broken.
   // Reading the half-typed document instead would hand every control undefined
@@ -45,7 +59,8 @@ export default function AgentJsonForm({ agent, onlyChanged, onShowAll, onEdit, o
   const anyVisible = SECTIONS.some((s) => fieldsIn(s.id).some(visible));
 
   return (
-    <div className="space-y-3">
+    // The measured box for every @md/@3xl below.
+    <div className="@container space-y-3">
       {SECTIONS.map((section) => {
         const all = fieldsIn(section.id).filter(visible);
         if (!all.length) return null;
@@ -83,15 +98,35 @@ export default function AgentJsonForm({ agent, onlyChanged, onShowAll, onEdit, o
               </span>
             }
           >
-            <div className="space-y-3">
+            {/*
+              A grid of tiles, not a column of rows.
+
+              Every field used to take a full row, so a seven-option Select sat
+              alone across the width and the section became a long scroll of
+              mostly-empty space. Each field now asks for the width its control
+              actually needs, and each sits on its own surface so it reads as a
+              discrete setting rather than a label floating above an input.
+
+              Dense flow, so a later short field backfills the gap a wide one
+              left rather than starting a mostly-empty row. Dense repacks what
+              is PAINTED and leaves the DOM alone, so reading order and tab
+              order still follow the file — which is the thing the form is
+              supposed to be teaching.
+            */}
+            <div className="grid grid-flow-row-dense grid-cols-6 gap-2">
               {specs.map((spec) => (
                 <div
                   key={spec.path}
                   className={cn(
-                    "rounded-md transition-colors",
+                    "min-w-0 rounded-lg border p-2.5 transition-colors",
+                    SPAN[spec.width ?? "md"],
                     // Flashes the field you had the caret on in the JSON, which
                     // is how you learn which key the control was.
-                    cursorPath === spec.path && "-mx-1.5 bg-primary/5 px-1.5 py-1 ring-1 ring-primary/25",
+                    cursorPath === spec.path
+                      ? "border-primary/40 bg-primary/5 ring-1 ring-primary/20"
+                      : changed.has(spec.path)
+                        ? "border-border bg-muted/30"
+                        : "border-border/50 bg-muted/15",
                   )}
                 >
                   <SchemaField
@@ -117,7 +152,7 @@ export default function AgentJsonForm({ agent, onlyChanged, onShowAll, onEdit, o
                     })
                   }
                   aria-expanded={open}
-                  className="flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                  className="col-span-6 flex items-center gap-1 pt-0.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
                 >
                   {open ? (
                     <ChevronDown className="size-3" aria-hidden />

@@ -60,6 +60,10 @@ export const SCHEMA_ID = "aziron://schemas/agent.v1.json";
  * @property {"text"|"textarea"|"select"|"slider"|"number"|"toggle"|"chips"|"prompt-list"} control
  * @property {"package"|"runtime"|"knowledge"|"chat"|"workspace"} section
  * @property {"common"|"advanced"} tier
+ * @property {"sm"|"md"|"lg"} [width]
+ *   How much of the form grid this field asks for. A seven-option Select
+ *   does not need a full row, and giving every field one is what turned the
+ *   form into a column of mostly-empty boxes. Defaults to "md".
  * @property {*} fallback       The value when the key is absent. Never undefined:
  *   this is what a deleted line resets to, and what "changed from default" compares against.
  * @property {boolean} [readOnly] Emitted so the file is complete, ignored coming back in.
@@ -137,6 +141,7 @@ export const FIELDS = [
   /* ── package ───────────────────────────────────────────────────────────── */
   {
     path: "package.name",
+    width: "md",
     label: "Name",
     hint: "What this agent is called, in the catalog and in the install command.",
     type: "string",
@@ -152,6 +157,7 @@ export const FIELDS = [
   },
   {
     path: "package.description",
+    width: "md",
     label: "Description",
     hint: "What it does. Read by the catalog and used to decide when it is relevant.",
     type: "string",
@@ -164,6 +170,7 @@ export const FIELDS = [
   },
   {
     path: "package.category",
+    width: "sm",
     label: "Category",
     hint: "Groups it in the catalog. What v1 called a label.",
     type: "enum",
@@ -188,6 +195,7 @@ export const FIELDS = [
   },
   {
     path: "package.targets",
+    width: "md",
     label: "Installs into",
     hint: "Which tools a release can be installed into. Empty means all of them.",
     type: "enumArray",
@@ -223,6 +231,7 @@ export const FIELDS = [
   },
   {
     path: "package.tools.posture",
+    width: "sm",
     label: "Tool access",
     hint: "none · scoped · open. Open means every tool available to whoever runs it.",
     type: "enum",
@@ -261,6 +270,7 @@ export const FIELDS = [
   },
   {
     path: "package.tools.granted",
+    width: "lg",
     label: "Granted tools",
     hint: "The explicit allow-list. Only these can be called.",
     type: "enumArray",
@@ -304,6 +314,7 @@ export const FIELDS = [
   },
   {
     path: "package.version",
+    width: "sm",
     label: "Version",
     hint: "Set by releasing. A version you can type is a version that means nothing.",
     type: "string",
@@ -319,6 +330,7 @@ export const FIELDS = [
   /* ── runtime ───────────────────────────────────────────────────────────── */
   {
     path: "runtime.provider",
+    width: "md",
     label: "Provider",
     // The trap, stated where both surfaces read it: the record stores the
     // display name, and API_TOKENS is keyed by that same name.
@@ -367,6 +379,7 @@ export const FIELDS = [
   },
   {
     path: "runtime.model",
+    width: "md",
     label: "Model",
     hint: "Only models the chosen provider serves.",
     type: "enum",
@@ -408,6 +421,7 @@ export const FIELDS = [
   },
   {
     path: "runtime.apiToken",
+    width: "md",
     label: "API token",
     hint: "The id of a saved credential — never the secret itself. Stays on the runtime.",
     type: "enum",
@@ -439,6 +453,7 @@ export const FIELDS = [
   },
   {
     path: "runtime.temperature",
+    width: "sm",
     label: "Temperature",
     hint: "0 is repeatable, 1 is varied. Between 0 and 1.",
     type: "number",
@@ -465,6 +480,7 @@ export const FIELDS = [
   },
   {
     path: "runtime.maxTokens",
+    width: "sm",
     label: "Max tokens",
     hint: "The longest answer it may produce in one turn.",
     type: "number",
@@ -481,6 +497,7 @@ export const FIELDS = [
   },
   {
     path: "runtime.maxIterations",
+    width: "sm",
     label: "Max iterations",
     hint: "How many tool round-trips it may take before it must answer.",
     type: "number",
@@ -499,6 +516,7 @@ export const FIELDS = [
   /* ── knowledge ─────────────────────────────────────────────────────────── */
   {
     path: "knowledge.sources",
+    width: "md",
     label: "Sources",
     hint: "What it answers from, by name. Anything not in the catalogue is kept as typed.",
     type: "enumArray",
@@ -515,6 +533,7 @@ export const FIELDS = [
   },
   {
     path: "knowledge.vectorDb",
+    width: "md",
     label: "Vector database",
     hint: "Which database retrieval searches. Empty means none.",
     type: "enum",
@@ -542,6 +561,7 @@ export const FIELDS = [
   },
   {
     path: "knowledge.collections",
+    width: "lg",
     label: "Collections",
     hint: "Narrows retrieval to part of the database.",
     type: "enumArray",
@@ -586,6 +606,7 @@ export const FIELDS = [
   },
   {
     path: "knowledge.ragMode",
+    width: "sm",
     label: "RAG mode",
     hint: "Retrieve before answering, and cite what was retrieved.",
     type: "boolean",
@@ -606,6 +627,7 @@ export const FIELDS = [
   },
   {
     path: "knowledge.vectorSearch",
+    width: "sm",
     label: "Vector search",
     hint: "Semantic search across the selected collections.",
     type: "boolean",
@@ -620,6 +642,7 @@ export const FIELDS = [
   /* ── chat ──────────────────────────────────────────────────────────────── */
   {
     path: "chat.quickPrompts",
+    width: "lg",
     label: "Quick prompts",
     hint: "Starter buttons above the composer. Each needs a label and a prompt.",
     type: "objectArray",
@@ -654,6 +677,7 @@ export const FIELDS = [
   /* ── workspace ─────────────────────────────────────────────────────────── */
   {
     path: "workspace.status",
+    width: "sm",
     label: "Status",
     hint: "The dot in the catalog. active · idle · error · disabled.",
     type: "enum",
@@ -678,6 +702,7 @@ export const FIELDS = [
   },
   {
     path: "workspace.visibility",
+    width: "sm",
     label: "Visibility",
     hint: "Public agents are installable by anyone in the org.",
     type: "enum",
