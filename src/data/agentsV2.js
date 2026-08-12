@@ -103,6 +103,26 @@ export const VECTOR_DBS = [
   { id: "vdb-fin", name: "Finance", collections: ["billing", "contracts"] },
 ];
 
+/**
+ * Vault variables an agent can reference from any file with {{NAME}}.
+ *
+ * Names and purposes only — never values. The whole point of the vault is
+ * that the secret is resolved at run time on the machine that has it, so a
+ * picker that could show you the value would defeat it. What the author needs
+ * is the exact spelling, which is also the thing they most often get wrong.
+ */
+export const VAULT_VARIABLES = [
+  { name: "JENKINS_USERNAME", note: "Jenkins service account", scope: "org" },
+  { name: "JENKINS_API_TOKEN", note: "Jenkins API token", scope: "org", secret: true },
+  { name: "GITHUB_TOKEN", note: "GitHub PAT for the org", scope: "org", secret: true },
+  { name: "AWS_REGION", note: "Default region, e.g. eu-west-1", scope: "org" },
+  { name: "AWS_ROLE_ARN", note: "Role assumed for deployments", scope: "org" },
+  { name: "SLACK_WEBHOOK_URL", note: "Incident channel webhook", scope: "team", secret: true },
+  { name: "SMTP_HOST", note: "Outbound mail relay", scope: "org" },
+  { name: "PAGERDUTY_ROUTING_KEY", note: "Routes alerts to the on-call", scope: "team", secret: true },
+  { name: "HANDBOOK_URL", note: "Canonical handbook location", scope: "org" },
+];
+
 export const KNOWLEDGE_SOURCES = [
   { id: "handbook", name: "Employee Handbook 2026", meta: "PDF · 84 pages" },
   { id: "benefits", name: "Benefits FAQ", meta: "Doc · 12 pages" },

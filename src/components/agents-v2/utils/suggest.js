@@ -1,5 +1,11 @@
 /**
- * Relative-path resolution for the editor's `./` and `../` autocomplete.
+ * Token resolution for the editor's autocomplete.
+ *
+ * Two triggers, because an agent's files reference two kinds of thing it
+ * cannot validate for itself: other files in its own folder, and secrets from
+ * the vault. Both are typed from memory today, and both fail silently when
+ * mistyped — a bad path is a reference that never resolves, a bad variable
+ * name is a placeholder that never expands.
  *
  * Pure functions, no React: agents are multi-file and the entrypoint's job is
  * to point at the other files, so this is the logic that decides what actually
@@ -7,12 +13,34 @@
  * component to rendering.
  */
 
-/** Find a `./` or `../` token immediately behind the caret, if any. */
+/**
+ * Find a completable token immediately behind the caret.
+ *
+ * Returns `{ kind, token, start }` — kind "path" for `./` and `../`, kind
+ * "vault" for `{{`. Null when the caret is in ordinary prose.
+ */
 export function tokenBehindCaret(value, caret) {
   const upto = String(value ?? "").slice(0, caret);
-  const match = upto.match(/(\.{1,2}\/[^\s"'`)\]]*)$/);
-  if (!match) return null;
-  return { token: match[1], start: caret - match[1].length };
+
+  // {{ wins when both could match, because a path cannot appear inside one.
+  const vault = upto.match(/\{\{([A-Za-z0-9_]*)$/);
+  if (vault) {
+    return { kind: "vault", token: vault[0], typed: vault[1], start: caret - vault[0].length };
+  }
+
+  const path = upto.match(/(\.{1,2}\/[^\s"'`)\]]*)$/);
+  if (path) {
+    return { kind: "path", token: path[1], start: caret - path[1].length };
+  }
+  return null;
+}
+
+/** Vault variables whose name starts with what has been typed so far. */
+export function resolveVault(typed, variables = []) {
+  const q = String(typed ?? "").toUpperCase();
+  return variables
+    .filter((v) => v.name.toUpperCase().startsWith(q))
+    .map((v) => ({ name: v.name, note: v.note, secret: Boolean(v.secret), scope: v.scope }));
 }
 
 /**

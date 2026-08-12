@@ -1,30 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { File as FileIcon, FolderClosed } from "lucide-react";
+import { File as FileIcon, FolderClosed, KeyRound, Lock } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { resolveCandidates, tokenBehindCaret } from "./utils/pathSuggest";
+import { VAULT_VARIABLES } from "@/data/agentsV2";
+import { resolveCandidates, resolveVault, tokenBehindCaret } from "./utils/suggest";
 
 /**
- * Relative-path autocomplete for the file editor.
+ * Autocomplete in the file editor, for the two things an agent's files
+ * reference but cannot check for themselves.
  *
- * Agents are multi-file, and the entrypoint's whole job is to point at the
- * other files. Typing those paths from memory is where cross-references break:
- * a reference to `references/backround.md` fails silently, because nothing
- * validates prose.
+ *   ./  ../   other files in this agent's folder
+ *   {{        vault variables, resolved on the machine that runs the agent
  *
- * So typing `./` or `../` offers what is actually there, resolved against the
- * file being edited. Choosing a folder appends a slash so the next level opens
- * immediately.
+ * Both are typed from memory today and both fail silently when wrong: a bad
+ * path is a reference that never resolves, a bad variable name is a
+ * placeholder that never expands. Offering what actually exists is the whole
+ * feature.
+ *
+ * Vault entries show a name and a purpose and never a value — the secret is
+ * resolved at run time on the machine that holds it, and a picker that could
+ * show you the value would defeat the point of the vault.
  */
-export default function PathSuggest({ textareaRef, value, currentPath, files, folders, onInsert }) {
-  // { token, start, items, index, top } — position included, because reading
-  // the textarea during render is not allowed and not safe.
+export default function EditorSuggest({ textareaRef, value, currentPath, files, folders, onInsert }) {
+  // { kind, token, start, items, index, top }
   const [state, setState] = useState(null);
 
-  // A completed file path still matches itself, so refresh() would reopen the
-  // list on the very thing that was just chosen. Remember that token and stay
-  // shut until the text moves on. Folders are deliberately not suppressed —
-  // there, reopening IS the point, because the next level should appear.
+  // A completed token still matches itself, so refresh() would reopen the list
+  // on the very thing that was just chosen.
   const dismissed = useRef(null);
 
   const refresh = useCallback(() => {
@@ -44,14 +46,19 @@ export default function PathSuggest({ textareaRef, value, currentPath, files, fo
       return;
     }
     dismissed.current = null;
-    const items = resolveCandidates(found.token, currentPath, files, folders);
+
+    const items =
+      found.kind === "vault"
+        ? resolveVault(found.typed, VAULT_VARIABLES)
+        : resolveCandidates(found.token, currentPath, files, folders);
+
     if (!items || items.length === 0) {
       setState(null);
       return;
     }
 
     // Anchored under the caret's line. A textarea exposes no caret geometry,
-    // and mirroring it into a hidden div to get exact coordinates is a lot of
+    // and mirroring it into a hidden div for exact coordinates is a lot of
     // machinery for an affordance that only needs to be near the right place.
     const line = value.slice(0, found.start).split("\n").length - 1;
     const lh = parseFloat(getComputedStyle(el).lineHeight) || 16;
@@ -68,12 +75,20 @@ export default function PathSuggest({ textareaRef, value, currentPath, files, fo
   const choose = useCallback(
     (item) => {
       if (!state || !item) return;
-      const upToSlash = state.token.slice(0, state.token.lastIndexOf("/") + 1);
-      // A folder keeps its trailing slash so the next level opens straight away.
-      const inserted = `${upToSlash}${item.name}${item.isDir ? "/" : ""}`;
-      // Picking a file finishes the path; picking a folder does not.
-      dismissed.current = item.isDir ? null : inserted;
-      onInsert(state.start, state.start + state.token.length, inserted);
+
+      if (state.kind === "vault") {
+        // Closed on insert: a half-written {{NAME is not a reference, and
+        // leaving the braces open is the mistake this exists to prevent.
+        const inserted = `{{${item.name}}}`;
+        dismissed.current = inserted;
+        onInsert(state.start, state.start + state.token.length, inserted);
+      } else {
+        const upToSlash = state.token.slice(0, state.token.lastIndexOf("/") + 1);
+        const inserted = `${upToSlash}${item.name}${item.isDir ? "/" : ""}`;
+        // Picking a file finishes the path; picking a folder does not.
+        dismissed.current = item.isDir ? null : inserted;
+        onInsert(state.start, state.start + state.token.length, inserted);
+      }
       setState(null);
     },
     [state, onInsert],
@@ -116,13 +131,21 @@ export default function PathSuggest({ textareaRef, value, currentPath, files, fo
 
   if (!state) return null;
 
+  const isVault = state.kind === "vault";
+
   return (
     <div
       role="listbox"
-      aria-label="Path suggestions"
+      aria-label={isVault ? "Vault variables" : "Path suggestions"}
       style={{ top: state.top, left: 12 }}
-      className="absolute z-30 max-h-52 w-64 overflow-y-auto rounded-lg border border-border bg-popover py-1 shadow-lg"
+      className="absolute z-30 max-h-56 w-72 overflow-y-auto rounded-lg border border-border bg-popover py-1 shadow-lg"
     >
+      {isVault && (
+        <p className="px-2.5 pb-1 text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+          Vault variables
+        </p>
+      )}
+
       {state.items.map((item, i) => (
         <button
           key={item.name}
@@ -136,21 +159,34 @@ export default function PathSuggest({ textareaRef, value, currentPath, files, fo
           }}
           onMouseEnter={() => setState((s) => (s ? { ...s, index: i } : s))}
           className={cn(
-            "flex w-full items-center gap-2 px-2.5 py-1 text-left font-mono text-[11px] transition-colors",
+            "flex w-full items-center gap-2 px-2.5 py-1 text-left transition-colors",
             i === state.index ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted",
           )}
         >
-          {item.isDir ? (
+          {isVault ? (
+            <KeyRound className="size-3 shrink-0" aria-hidden />
+          ) : item.isDir ? (
             <FolderClosed className="size-3 shrink-0 text-primary/70" aria-hidden />
           ) : (
             <FileIcon className="size-3 shrink-0" aria-hidden />
           )}
-          <span className="truncate">
-            {item.name}
-            {item.isDir ? "/" : ""}
+
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-mono text-[11px]">
+              {isVault ? item.name : `${item.name}${item.isDir ? "/" : ""}`}
+            </span>
+            {isVault && item.note && (
+              <span className="block truncate text-[10px] text-muted-foreground/80">{item.note}</span>
+            )}
           </span>
+
+          {/* Marks a secret without ever showing one. */}
+          {isVault && item.secret && (
+            <Lock className="size-2.5 shrink-0 text-muted-foreground" aria-label="Secret" />
+          )}
         </button>
       ))}
+
       <p className="mt-0.5 border-t border-border px-2.5 pt-1 text-[10px] text-muted-foreground">
         ↑↓ move · Tab insert · Esc dismiss
       </p>

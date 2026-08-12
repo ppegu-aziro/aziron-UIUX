@@ -36,7 +36,7 @@ import AgentHalvesBar from "./AgentHalvesBar";
 import ReleasesPanel from "./ReleasesPanel";
 import FrontmatterEditor from "./FrontmatterEditor";
 import AssistantPanel from "./AssistantPanel";
-import PathSuggest from "./PathSuggest";
+import EditorSuggest from "./EditorSuggest";
 import Resizer from "./Resizer";
 
 /**
@@ -434,7 +434,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
                 placeholder={isEntry ? SCAFFOLD : undefined}
                 className="min-h-0 flex-1 resize-none overflow-y-auto rounded-none border-0 bg-transparent font-mono text-[11px] leading-5 focus-visible:ring-0"
               />
-              <PathSuggest
+              <EditorSuggest
                 textareaRef={textareaRef}
                 value={content}
                 currentPath={activeFile.path}
@@ -454,11 +454,28 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
               />
             </div>
 
-            <p className="shrink-0 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
-              {isEntry
-                ? "This file is the agent. Everything else in the folder supports it."
-                : "Loaded alongside the entrypoint when this agent runs."}
-            </p>
+            {/*
+              The footer is the only always-visible surface in the editor, so
+              it carries the two things you cannot discover by looking: that
+              ./ completes a file and {{ completes a vault variable. Neither
+              announces itself, and both fail silently when typed wrong.
+            */}
+            <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
+              <span>
+                {isEntry
+                  ? "This file is the agent. Everything else in the folder supports it."
+                  : "Loaded alongside the entrypoint when this agent runs."}
+              </span>
+              <span className="ml-auto flex items-center gap-3">
+                <span>
+                  Type <code className="rounded bg-muted px-1 font-mono text-[10px]">./</code> to link a file
+                </span>
+                <span>
+                  <code className="rounded bg-muted px-1 font-mono text-[10px]">{"{{"}</code> for a vault
+                  variable
+                </span>
+              </span>
+            </div>
           </div>
         )}
 
