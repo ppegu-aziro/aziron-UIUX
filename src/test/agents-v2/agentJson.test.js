@@ -19,6 +19,7 @@ import {
   changedPaths,
 } from "@/components/agents-v2/utils/agentJson";
 import { jsonContextAt, readAt } from "@/components/agents-v2/utils/jsonPath";
+import { suggestJson } from "@/components/agents-v2/utils/agentJsonSuggest";
 
 /** The store's shape guarantees, applied the way the provider applies them. */
 const norm = (a) => ({
@@ -329,5 +330,128 @@ describe("jsonContextAt", () => {
       expect(() => jsonContextAt(j, j.length)).not.toThrow();
       expect(() => readAt(j, ["a"])).not.toThrow();
     }
+  });
+});
+
+// ─── Schema-aware completion ──────────────────────────────────────────────────
+
+describe("suggestJson", () => {
+  /** "|" marks the caret. */
+  const at = (tpl) => suggestJson(tpl.replace("|", ""), tpl.indexOf("|"), ic);
+  const values = (tpl) => at(tpl)?.items.map((i) => i.value) ?? [];
+
+  describe("property names", () => {
+    it("completes a partial top-level key", () => {
+      expect(values('{\n  "$schema": "x",\n  "pack|"\n}')).toContain("package");
+    });
+
+    it("offers every section at the top level", () => {
+      expect(values('{\n  "|"\n}')).toEqual(
+        expect.arrayContaining(["package", "runtime", "knowledge", "chat", "workspace"]),
+      );
+    });
+
+    it("scopes to the object the caret is inside", () => {
+      expect(values('{\n  "package": { "targ|" }\n}')).toContain("targets");
+      expect(values('{\n  "package": { "tools": { "post|" } }\n}')).toContain("posture");
+      expect(values('{\n  "runtime": { "prov|" }\n}')).toContain("provider");
+    });
+
+    it("does not offer a key already written, which the parser would drop", () => {
+      const got = values('{\n  "package": { "name": "x", "description": "y", "|" }\n}');
+      expect(got).not.toContain("name");
+      expect(got).not.toContain("description");
+      expect(got).toContain("category");
+    });
+
+    it("does not offer the read-only version", () => {
+      expect(values('{\n  "package": { "vers|" }\n}')).not.toContain("version");
+    });
+
+    it("carries the schema's hint verbatim, so the form and the list agree", () => {
+      expect(at('{\n  "runtime": { "prov|" }\n}').items[0].note).toMatch(/vendor name as shown/);
+    });
+
+    it("inserts a filled shape for the one array-of-objects", () => {
+      expect(at('{\n  "chat": { "quick|" }\n}').items[0].insert).toMatch(/"label"/);
+    });
+  });
+
+  describe("values", () => {
+    it("offers tool names inside granted", () => {
+      expect(values('{\n  "package": { "tools": { "granted": ["git|"] } }\n}')).toContain("github_issue");
+    });
+
+    it("groups tools by their catalogue category", () => {
+      const items = at('{\n  "package": { "tools": { "granted": ["|"] } }\n}').items;
+      expect(items.find((i) => i.value === "web_search").group).toBe("Web");
+    });
+
+    it("offers categories, targets and statuses", () => {
+      expect(values('{\n  "package": { "category": "Eng|" }\n}')).toContain("Engineering");
+      expect(values('{\n  "package": { "targets": ["cl|"] }\n}')).toContain("claude");
+      expect(values('{\n  "workspace": { "status": "|" }\n}')).toEqual(
+        expect.arrayContaining(["active", "idle", "error", "disabled"]),
+      );
+    });
+
+    it("does not repeat a value already in the array", () => {
+      const got = values('{\n  "package": { "tools": { "granted": ["web_search", "|"] } }\n}');
+      expect(got).not.toContain("web_search");
+      expect(got).toContain("web_fetch");
+    });
+  });
+
+  describe("cross-field narrowing", () => {
+    it("offers only the chosen vendor's models", () => {
+      expect(values('{\n  "runtime": { "provider": "Anthropic", "model": "|" }\n}')).toContain(
+        "Claude Opus 4.5",
+      );
+      const openai = values('{\n  "runtime": { "provider": "OpenAI", "model": "|" }\n}');
+      expect(openai).toEqual(expect.arrayContaining(["GPT-5", "GPT-5 mini"]));
+      expect(openai.some((m) => /Claude/.test(m))).toBe(false);
+    });
+
+    it("offers only credentials saved for that vendor", () => {
+      expect(values('{\n  "runtime": { "provider": "Anthropic", "apiToken": "|" }\n}')).toContain(
+        "anthropic-default",
+      );
+      expect(values('{\n  "runtime": { "provider": "OpenAI", "apiToken": "|" }\n}')).toEqual(["openai-default"]);
+    });
+
+    it("offers only collections belonging to the chosen database", () => {
+      expect(values('{\n  "knowledge": { "vectorDb": "vdb-hr", "collections": ["|"] }\n}')).toEqual(
+        expect.arrayContaining(["handbook", "benefits"]),
+      );
+      expect(values('{\n  "knowledge": { "vectorDb": "vdb-eng", "collections": ["|"] }\n}')).toEqual(
+        expect.arrayContaining(["runbooks", "adr"]),
+      );
+    });
+  });
+
+  describe("on text that does not parse", () => {
+    // The whole reason this is worth having: the moment the string being typed
+    // is what makes the document invalid is the moment you want the list.
+    it("still completes, falling back to the record", () => {
+      const r = at('{\n  "runtime": { "provider": "Anthropic", "model": "Cla|');
+      expect(r).toBeTruthy();
+      expect(r.items.map((i) => i.value)).toContain("Claude Opus 4.5");
+    });
+
+    it("never throws", () => {
+      for (const j of ["", "{", "[", '{"a":', '{"runtime":{"provider":', "null", "\\", '{"a":[{"b":']) {
+        expect(() => suggestJson(j, j.length, ic)).not.toThrow();
+      }
+    });
+  });
+
+  describe("stays quiet where nothing belongs", () => {
+    it("offers nothing inside free prose", () => {
+      expect(at('{\n  "package": { "description": "some pro|" }\n}')).toBeNull();
+    });
+
+    it("offers nothing for a number", () => {
+      expect(at('{\n  "runtime": { "maxTokens": 40|96 }\n}')).toBeNull();
+    });
   });
 });

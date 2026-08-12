@@ -89,9 +89,39 @@ export const SECTIONS = [
 
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const strArray = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : null);
+
+const norm = (x) => String(x ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/** Edit distance, capped — anything further apart than a typo is not a suggestion. */
+function within(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) return false;
+  let prev = [...Array(b.length + 1).keys()];
+  for (let i = 1; i <= a.length; i += 1) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    if (Math.min(...row) > max) return false;
+    prev = row;
+  }
+  return prev[b.length] <= max;
+}
+
+/**
+ * The catalogue entry someone probably meant.
+ *
+ * Case and punctuation first — "Open" for "open" is the commonest mistake once
+ * the values are typed by hand rather than clicked — then a one or two
+ * character typo, which is what turns "not a known tool" into a repair button.
+ */
 const near = (v, list) => {
-  const q = String(v ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
-  return list.find((x) => String(x).toLowerCase().replace(/[^a-z0-9]/g, "") === q) ?? null;
+  const q = norm(v);
+  if (!q) return null;
+  return (
+    list.find((x) => norm(x) === q) ??
+    list.find((x) => within(q, norm(x), q.length > 6 ? 2 : 1)) ??
+    null
+  );
 };
 
 /** @type {FieldSpec[]} */
@@ -241,24 +271,25 @@ export const FIELDS = [
     options: () =>
       TOOL_CATALOG.flatMap((c) => c.tools.map((t) => ({ value: t, group: c.category }))),
     check: ({ doc }) => {
-      const bad = (strArray(doc?.package?.tools?.granted) ?? []).filter(
-        (t) => !ALL_TOOLS.includes(t),
-      );
+      const list = strArray(doc?.package?.tools?.granted) ?? [];
+      const bad = list.filter((t) => !ALL_TOOLS.includes(t));
       if (!bad.length) return null;
       const hit = near(bad[0], ALL_TOOLS);
       return {
         path: "package.tools.granted",
         severity: "error",
         message: `${bad.map((b) => `“${b}”`).join(", ")} ${bad.length === 1 ? "is not a known tool" : "are not known tools"}.`,
+        // Always a real patch: a repair that has to splice text would be the one
+        // place the form writes into the document, which is the thing this
+        // design exists to avoid.
         fix: hit
-          ? { label: `Did you mean ${hit}?`, patch: null, replace: [bad[0], hit] }
+          ? {
+              label: `Use ${hit}`,
+              patch: { granted: list.map((t) => (t === bad[0] ? hit : t)).filter((t) => ALL_TOOLS.includes(t)) },
+            }
           : {
               label: "Drop the unknown ones",
-              patch: {
-                granted: (strArray(doc?.package?.tools?.granted) ?? []).filter((t) =>
-                  ALL_TOOLS.includes(t),
-                ),
-              },
+              patch: { granted: list.filter((t) => ALL_TOOLS.includes(t)) },
             },
       };
     },

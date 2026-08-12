@@ -334,7 +334,7 @@ export function KnowledgeDialog({ agent, open, onOpenChange }) {
  * quietly — everything after this is installed on somebody's machine.
  */
 export function ReleaseDialog({ agent, open, onOpenChange }) {
-  const { release, setTargets } = useAgentsV2();
+  const { release, agentFiles } = useAgentsV2();
   const [kind, setKind] = useState(agent?.release ? "minor" : "patch");
   const [notes, setNotes] = useState("");
   const [targets, setLocalTargets] = useState(
@@ -348,9 +348,24 @@ export function ReleaseDialog({ agent, open, onOpenChange }) {
 
   const first = !agent?.release;
 
+  /**
+   * What actually ships, entrypoint first.
+   *
+   * Read through the projection: AGENT.json is generated and therefore absent
+   * from the record, and this is the one screen that tells someone what a
+   * release contains. Listing the folder without the file that configures it
+   * would be a lie at exactly the moment it matters.
+   */
+  const ENTRY_FIRST = { "AGENT.md": 0, "AGENT.json": 1 };
+  const shipping = [...(agentFiles(agent?.id) ?? [])].sort(
+    (a, b) => (ENTRY_FIRST[a.path] ?? 2) - (ENTRY_FIRST[b.path] ?? 2) || a.path.localeCompare(b.path),
+  );
+
   const go = () => {
-    setTargets(agent.id, targets);
-    release(agent.id, { kind, notes });
+    // One patch, not two. Between a separate setTargets and release the record
+    // holds the new targets with the old version, and anything serialising in
+    // that window disagrees with the release that ships it.
+    release(agent.id, { kind, notes, targets });
     toast.success(`${agent.name} v${next} released`, {
       description: `Installable into ${targets.length} target${targets.length === 1 ? "" : "s"}.`,
     });
@@ -439,14 +454,13 @@ export function ReleaseDialog({ agent, open, onOpenChange }) {
               <Boxes className="size-3 text-muted-foreground" aria-hidden />
               Ships in v{next}
               <span className="font-normal text-muted-foreground">
-                · {(agent?.files ?? []).length} file
-                {(agent?.files ?? []).length === 1 ? "" : "s"}
+                · {shipping.length} file{shipping.length === 1 ? "" : "s"}
               </span>
             </p>
             <div className="flex flex-wrap gap-1">
               {/* files are {path, content} — rendering the object itself is
                   what took this dialog down. */}
-              {(agent?.files ?? []).map((f) => (
+              {shipping.map((f) => (
                 <span
                   key={f.path}
                   className="rounded bg-card px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
@@ -455,6 +469,12 @@ export function ReleaseDialog({ agent, open, onOpenChange }) {
                 </span>
               ))}
             </div>
+            {/* The distinction the config file makes concrete: the package half
+                travels, the runtime half does not. */}
+            <p className="mt-2 text-[10px] leading-4 text-muted-foreground">
+              AGENT.json ships with its <span className="text-foreground">package</span> settings only —
+              the model, credentials and retrieval stay on this workspace.
+            </p>
           </div>
         </div>
 

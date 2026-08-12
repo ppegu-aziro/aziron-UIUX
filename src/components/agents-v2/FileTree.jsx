@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
+  Cog,
   Copy,
   File as FileIcon,
   FilePlus,
@@ -50,7 +51,15 @@ function buildTree(files, folders) {
     const segs = file.path.split("/");
     const name = segs.pop();
     const parent = segs.length ? ensureDir(segs) : root;
-    parent.children.set(name, { name, path: file.path, dir: false, children: new Map() });
+    // Carried through so the row can refuse what cannot work on a generated
+    // file, rather than offering it and silently doing nothing.
+    parent.children.set(name, {
+      name,
+      path: file.path,
+      dir: false,
+      generated: Boolean(file.generated),
+      children: new Map(),
+    });
   });
 
   const sort = (node) => {
@@ -93,10 +102,13 @@ const SUGGESTED = [
 const MENU = [
   { id: "newFile", label: "New file", icon: FilePlus, dirOnly: true },
   { id: "newFolder", label: "New folder", icon: FolderPlus, dirOnly: true },
-  { id: "rename", label: "Rename or move…", icon: Pencil },
-  { id: "duplicate", label: "Duplicate", icon: Copy, fileOnly: true },
-  { id: "delete", label: "Delete", icon: Trash2, danger: true },
+  { id: "rename", label: "Rename or move…", icon: Pencil, real: true },
+  { id: "duplicate", label: "Duplicate", icon: Copy, fileOnly: true, real: true },
+  { id: "delete", label: "Delete", icon: Trash2, danger: true, real: true },
 ];
+
+/** Why the four structural operations are unavailable on a generated file. */
+const GENERATED_REASON = "generated from settings";
 
 const ROW =
   "group flex items-center gap-1.5 rounded-md py-1 pr-2 text-[11px] transition-colors select-none";
@@ -218,7 +230,7 @@ function Node({
         aria-selected={active === node.path}
         aria-expanded={node.dir ? isOpen : undefined}
         tabIndex={0}
-        draggable
+        draggable={!node.generated}
         onDragStart={(e) => {
           e.stopPropagation();
           e.dataTransfer.setData("text/plain", node.path);
@@ -242,7 +254,7 @@ function Node({
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             node.dir ? toggle(node.path) : onSelect(node.path);
-          } else if (e.key === "F2") {
+          } else if (e.key === "F2" && !node.generated) {
             e.preventDefault();
             startEdit({ kind: "rename", path: node.path });
           }
@@ -281,6 +293,11 @@ function Node({
           </>
         )}
         <span className="truncate font-mono">{node.name}</span>
+        {/* Says the file is written for you, which is also why four of its
+            menu items are greyed out. */}
+        {node.generated && (
+          <Cog className="ml-auto size-2.5 shrink-0 text-muted-foreground" aria-label="generated" />
+        )}
       </div>
 
       {node.dir && isOpen && (
@@ -491,21 +508,33 @@ export default function FileTree({
           >
             {MENU.filter((m) => !(m.dirOnly && !menu.node.dir) && !(m.fileOnly && menu.node.dir))
               .filter((m) => !(menu.node.path === "" && m.id !== "newFile" && m.id !== "newFolder"))
-              .map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  role="menuitem"
-                  onClick={() => handleMenu(m.id, menu.node)}
-                  className={cn(
-                    "flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors",
-                    m.danger ? "text-destructive hover:bg-destructive/10" : "text-foreground hover:bg-muted",
-                  )}
-                >
-                  <m.icon className="size-3 shrink-0" aria-hidden />
-                  {m.label}
-                </button>
-              ))}
+              .map((m) => {
+                // Shown and disabled rather than hidden: an absent row reads as
+                // a bug, a greyed one with a reason reads as a rule.
+                const off = m.real && menu.node.generated;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    role="menuitem"
+                    disabled={off}
+                    title={off ? `AGENT.json is ${GENERATED_REASON}` : undefined}
+                    onClick={() => !off && handleMenu(m.id, menu.node)}
+                    className={cn(
+                      "flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors",
+                      off
+                        ? "cursor-not-allowed text-muted-foreground/50"
+                        : m.danger
+                          ? "text-destructive hover:bg-destructive/10"
+                          : "text-foreground hover:bg-muted",
+                    )}
+                  >
+                    <m.icon className="size-3 shrink-0" aria-hidden />
+                    {m.label}
+                    {off && <span className="ml-auto text-[10px]">{GENERATED_REASON}</span>}
+                  </button>
+                );
+              })}
           </div>
         </>
       )}

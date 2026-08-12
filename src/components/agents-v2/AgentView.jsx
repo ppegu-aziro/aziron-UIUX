@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { AGENT_JSON_PATH } from "@/data/agentJsonSchema";
 import { useAgentsV2 } from "@/context/AgentsV2Context";
 import { KnowledgeDialog, ModelDialog, ReleaseDialog, ToolsDialog } from "./dialogs";
 import FileTree from "./FileTree";
@@ -39,6 +40,7 @@ import ReleasesPanel from "./ReleasesPanel";
 import FrontmatterEditor from "./FrontmatterEditor";
 import AssistantPanel from "./AssistantPanel";
 import EditorSuggest from "./EditorSuggest";
+import AgentJsonView from "./AgentJsonView";
 import Resizer from "./Resizer";
 
 /**
@@ -75,6 +77,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
     patch,
     fork,
     saveFiles,
+    agentFiles,
     addFile,
     addFolder,
     renameNode,
@@ -109,13 +112,22 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
   //
   // Keyed by path rather than cleared by an effect: switching files then simply
   // stops matching, which is one fewer render and one fewer thing to get wrong.
-  const [buffer, setBuffer] = useState(null); // { path, value }
+  // { path, value, committed }. `committed` rather than a byte comparison
+  // against the file: AGENT.json is generated, so its canonical text can never
+  // equal what the user typed once they reformat it, and a byte compare would
+  // leave the unsaved dot permanently lit and make Ctrl-S always claim a save.
+  const [buffer, setBuffer] = useState(null);
   const flushRef = useRef(null);
   const textareaRef = useRef(null);
 
+  // The folder as the user sees it: the agent's own files plus the generated
+  // AGENT.json. Everything that lists, resolves or completes a path reads this
+  // rather than the raw record.
+  const files = agentFiles(agentId);
+
   const activeFile = useMemo(
-    () => agent?.files.find((f) => f.path === activePath) ?? agent?.files[0],
-    [agent, activePath],
+    () => files.find((f) => f.path === activePath) ?? files[0],
+    [files, activePath],
   );
 
   /**
@@ -132,9 +144,10 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
   const saveNow = () => {
     if (!agent || !activeFile) return;
     clearTimeout(flushRef.current);
-    const pending = buffer?.path === activeFile.path && buffer.value !== activeFile.content;
+    const pending = buffer?.path === activeFile.path && !buffer.committed;
     if (pending) {
       saveFiles(agent.id, { [activeFile.path]: buffer.value });
+      setBuffer((b) => (b ? { ...b, committed: true } : b));
       toast.success("Draft saved");
     } else {
       toast.message("Draft is already saved");
@@ -158,10 +171,11 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
   if (!agent || !activeFile) return null;
 
   const isEntry = activeFile.path === "AGENT.md";
+  const isConfig = activeFile.path === AGENT_JSON_PATH;
   const content = buffer?.path === activeFile.path ? buffer.value : activeFile.content;
   // True while a keystroke is still sitting in the debounce. The Save button
   // exists to end that window on demand rather than to gate the write.
-  const unsaved = buffer?.path === activeFile.path && buffer.value !== activeFile.content;
+  const unsaved = buffer?.path === activeFile.path && !buffer.committed;
   const named = Boolean(agent.name.trim());
   const hasBody = Boolean(agent.files.find((f) => f.path === "AGENT.md")?.content.trim());
   const ready = named && hasBody;
@@ -171,10 +185,42 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
 
   const writeFile = (next) => {
     const path = activeFile.path;
-    setBuffer({ path, value: next });
+    setBuffer({ path, value: next, committed: false });
     clearTimeout(flushRef.current);
-    flushRef.current = setTimeout(() => saveFiles(agent.id, { [path]: next }), 300);
+    flushRef.current = setTimeout(() => {
+      saveFiles(agent.id, { [path]: next });
+      setBuffer((b) => (b && b.path === path && b.value === next ? { ...b, committed: true } : b));
+    }, 300);
   };
+
+  /** Splice a completion in and put the caret after it. */
+  const insertAtCaret = (from, to, text) => {
+    const next = content.slice(0, from) + text + content.slice(to);
+    writeFile(next);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      const caret = from + text.length;
+      el.focus();
+      el.setSelectionRange(caret, caret);
+    });
+  };
+
+  /**
+   * A form control changed.
+   *
+   * The form never rewrites the document — it patches the record, and the JSON
+   * re-derives. So the buffer holding whatever text was on screen has to go:
+   * left in place it would keep showing a file that predates the patch, and the
+   * next debounce would fold that stale text straight back over the edit.
+   */
+  const applyConfigPatch = (changes) => {
+    if (changes && Object.keys(changes).length) patch(agent.id, changes);
+    clearTimeout(flushRef.current);
+    setBuffer(null);
+  };
+
+  const editConfigField = (spec, value) => applyConfigPatch(spec.write(value, agent));
 
   /** Only the two operations that are not inline reach this. */
   const onFileAction = (action, node) => {
@@ -362,7 +408,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
                   )}
                   <span className="text-[11px] font-medium text-muted-foreground">Explorer</span>
                   <span className="font-mono text-[11px] text-muted-foreground/60">
-                    {agent.files.length}
+                    {files.length}
                   </span>
                 </button>
 
@@ -390,7 +436,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
                 )}
               >
                 <FileTree
-                  files={agent.files}
+                  files={files}
                   folders={agent.folders}
                   activePath={activeFile.path}
                   onSelect={(p) => {
@@ -474,59 +520,67 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
               </div>
             </div>
 
-            <div className="shrink-0">{isEntry && <FrontmatterEditor agent={agent} />}</div>
-
-            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-              <Textarea
-                ref={textareaRef}
-                aria-label={`${activeFile.path} content`}
-                value={content}
-                onChange={(e) => writeFile(e.target.value)}
-                placeholder={isEntry ? SCAFFOLD : undefined}
-                className="min-h-0 flex-1 resize-none overflow-y-auto rounded-none border-0 bg-transparent font-mono text-[11px] leading-5 focus-visible:ring-0"
-              />
-              <EditorSuggest
-                textareaRef={textareaRef}
-                value={content}
-                currentPath={activeFile.path}
-                files={agent.files}
+            {isConfig ? (
+              <AgentJsonView
+                agent={agent}
+                text={content}
+                files={files}
                 folders={agent.folders}
-                onInsert={(from, to, text) => {
-                  const next = content.slice(0, from) + text + content.slice(to);
-                  writeFile(next);
-                  requestAnimationFrame(() => {
-                    const el = textareaRef.current;
-                    if (!el) return;
-                    const caret = from + text.length;
-                    el.focus();
-                    el.setSelectionRange(caret, caret);
-                  });
-                }}
+                textareaRef={textareaRef}
+                onChangeText={writeFile}
+                onInsert={insertAtCaret}
+                onEditField={editConfigField}
+                onApplyPatch={applyConfigPatch}
+                onFlush={saveNow}
               />
-            </div>
+            ) : (
+              <>
+                <div className="shrink-0">{isEntry && <FrontmatterEditor agent={agent} />}</div>
 
-            {/*
-              The footer is the only always-visible surface in the editor, so
-              it carries the two things you cannot discover by looking: that
-              ./ completes a file and {{ completes a vault variable. Neither
-              announces itself, and both fail silently when typed wrong.
-            */}
-            <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
-              <span>
-                {isEntry
-                  ? "This file is the agent. Everything else in the folder supports it."
-                  : "Loaded alongside the entrypoint when this agent runs."}
-              </span>
-              <span className="ml-auto flex items-center gap-3">
-                <span>
-                  Type <code className="rounded bg-muted px-1 font-mono text-[10px]">./</code> to link a file
-                </span>
-                <span>
-                  <code className="rounded bg-muted px-1 font-mono text-[10px]">{"{{"}</code> for a vault
-                  variable
-                </span>
-              </span>
-            </div>
+                <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <Textarea
+                    ref={textareaRef}
+                    aria-label={`${activeFile.path} content`}
+                    value={content}
+                    onChange={(e) => writeFile(e.target.value)}
+                    placeholder={isEntry ? SCAFFOLD : undefined}
+                    className="min-h-0 flex-1 resize-none overflow-y-auto rounded-none border-0 bg-transparent font-mono text-[11px] leading-5 focus-visible:ring-0"
+                  />
+                  <EditorSuggest
+                    textareaRef={textareaRef}
+                    value={content}
+                    currentPath={activeFile.path}
+                    files={files}
+                    folders={agent.folders}
+                    onInsert={insertAtCaret}
+                  />
+                </div>
+
+                {/*
+                  The footer is the only always-visible surface in the editor, so
+                  it carries the two things you cannot discover by looking: that
+                  ./ completes a file and {{ completes a vault variable. Neither
+                  announces itself, and both fail silently when typed wrong.
+                */}
+                <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
+                  <span>
+                    {isEntry
+                      ? "This file is the agent. Everything else in the folder supports it."
+                      : "Loaded alongside the entrypoint when this agent runs."}
+                  </span>
+                  <span className="ml-auto flex items-center gap-3">
+                    <span>
+                      Type <code className="rounded bg-muted px-1 font-mono text-[10px]">./</code> to link a
+                      file
+                    </span>
+                    <span>
+                      <code className="rounded bg-muted px-1 font-mono text-[10px]">{"{{"}</code> for a vault
+                      variable
+                    </span>
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         )}
 
