@@ -1,0 +1,8 @@
+preparation.precheck[1].id duplicate precheck id
+preparation.precheck[2].depends_on[0] unknown precheck
+preparation.precheck[2].platforms.freebsd unknown platform
+preparation.precheck[2].platforms.all.check.expect sensitive_output
+preparation.preconfigure.prerequisites[0].when.precheck unknown precheck
+preparation.preconfigure.prerequisites[0].platforms.all.select at least two strategies
+preparation.preconfigure.prerequisites[0].platforms.all.strategies[0].label requires a label
+preparation.preconfigure.prerequisites[0].platforms.all.strategies[0].actions[0].argv[3] not declared in this action's prompts

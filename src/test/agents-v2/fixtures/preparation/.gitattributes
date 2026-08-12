@@ -1,0 +1,5 @@
+# Copied byte-for-byte from the Aziron repo's contracts/preparation/, and
+# checked by FIXTURES.sha256 there. Line-ending normalisation would change the
+# bytes and break that checksum, which exists precisely to catch a one-sided
+# edit — so nothing in here is a "text" file as far as git is concerned.
+* -text

@@ -1,0 +1,2 @@
+preparation.precheck[0].platforms.all.check.argv[0] bare binary name
+preparation.preconfigure.commands[0].platforms.all.actions[0].argv[0] bare binary name

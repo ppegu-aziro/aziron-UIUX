@@ -1,0 +1,14 @@
+# A future schema version. The SERVER rejects this at release because it cannot
+# validate what it does not understand. aziron-cli does the opposite: it warns,
+# records status "skipped" and installs the skill anyway — preparation metadata
+# must never gate installability. The two behaviors are intentional opposites.
+schema: 99
+
+preparation:
+  precheck:
+    - id: aws-cli
+      platforms:
+        all:
+          check:
+            kind: binary
+            value: aws

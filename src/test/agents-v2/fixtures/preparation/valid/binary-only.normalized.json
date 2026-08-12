@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "preparation": {
+    "precheck": [
+      {
+        "id": "terraform",
+        "label": "Terraform installed",
+        "dedup_key": "terraform",
+        "platforms": {
+          "all": {
+            "check": {
+              "kind": "binary",
+              "value": "terraform",
+              "timeout_seconds": 10
+            }
+          }
+        }
+      }
+    ],
+    "preconfigure": {
+      "commands": [
+        {
+          "id": "install-terraform",
+          "label": "Install Terraform",
+          "when": {
+            "precheck": "terraform",
+            "status": "unsatisfied"
+          },
+          "platforms": {
+            "all": {
+              "select": "auto",
+              "strategies": [
+                {
+                  "id": "default",
+                  "actions": [
+                    {
+                      "kind": "instructions",
+                      "message": "Install Terraform from https://developer.hashicorp.com/terraform/install",
+                      "elevation": "none"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

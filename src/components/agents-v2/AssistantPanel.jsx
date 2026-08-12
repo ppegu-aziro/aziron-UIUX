@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { FileText, Maximize2, Minimize2, Send, Sparkles, X } from "lucide-react";
 
+import { SEED } from "@/data/preparationSchema";
 import { useAgentsV2 } from "@/context/AgentsV2Context";
 
 /**
@@ -121,7 +122,7 @@ function plan(prompt, agent, intent) {
         {
           path: ".aziron/preparation.yaml",
           content:
-            "schema: 1\n\npreparation:\n  precheck:\n    - id: cli\n      label: Required CLI installed\n      platforms:\n        all:\n          check:\n            kind: binary\n            argv: [\"cli\"]\n\n  strategies:\n    - id: install\n      requires: []\n      platforms:\n        all:\n          actions:\n            - kind: instructions\n              message: Install the required CLI, then re-run preparation.\n",
+            SEED,
         },
       ],
       say: "Added `.aziron/preparation.yaml`. The last strategy declares no requirements, so preparation can never dead-end.",

@@ -1,0 +1,167 @@
+# Flagship fixture: every construct the schema supports, exercised together.
+# Mirrors the AWS toolchain, which is the case that motivated the contract —
+# a dependency the user may not have, installed by a package manager they may
+# also not have, followed by an authentication step only a human can choose.
+schema: 1
+
+preparation:
+  prompt: Preconfigure the AWS toolchain now?
+
+  precheck:
+    - id: aws-cli
+      label: AWS CLI v2 installed
+      dedup_key: aws-cli@2
+      platforms:
+        all:
+          check:
+            kind: command
+            argv: ["aws", "--version"]
+            timeout_seconds: 10
+            expect:
+              min_version: "2.0.0"
+              version_from: 'aws-cli/(\d+\.\d+\.\d+)'
+
+    - id: aws-identity
+      label: AWS credentials valid
+      depends_on: [aws-cli]
+      platforms:
+        all:
+          check:
+            kind: command
+            argv: ["aws", "sts", "get-caller-identity"]
+            timeout_seconds: 20
+            sensitive_output: true
+
+  preconfigure:
+    commands:
+      - id: install-aws-cli
+        label: Install AWS CLI v2
+        when:
+          precheck: aws-cli
+          status: unsatisfied
+        platforms:
+          windows:
+            select: auto
+            strategies:
+              - id: winget
+                requires: [winget]
+                actions:
+                  - kind: command
+                    argv:
+                      - winget
+                      - install
+                      - --id
+                      - Amazon.AWSCLI
+                      - --exact
+                      - --accept-package-agreements
+                      - --accept-source-agreements
+                    interactive: true
+                    elevation: may-prompt
+                    timeout_seconds: 900
+                path_hints: ['%ProgramFiles%\Amazon\AWSCLIV2']
+              - id: msi
+                requires: [msiexec]
+                actions:
+                  - kind: command
+                    argv: ["msiexec", "/i", "https://awscli.amazonaws.com/AWSCLIV2.msi", "/qn"]
+                    elevation: required
+                    timeout_seconds: 900
+                path_hints: ['%ProgramFiles%\Amazon\AWSCLIV2']
+              - id: manual
+                actions:
+                  - kind: instructions
+                    message: >-
+                      Install AWS CLI v2 from https://aws.amazon.com/cli/ and then run
+                      "aziron skill prepare aws-master".
+          darwin:
+            strategies:
+              - id: homebrew
+                requires: [brew]
+                actions:
+                  - kind: command
+                    argv: ["brew", "install", "awscli"]
+                    interactive: true
+                    timeout_seconds: 900
+                path_hints: ["/opt/homebrew/bin", "/usr/local/bin"]
+              - id: manual
+                actions:
+                  - kind: instructions
+                    message: >-
+                      Install AWS CLI v2 from https://aws.amazon.com/cli/ and then run
+                      "aziron skill prepare aws-master".
+          linux:
+            strategies:
+              - id: apt
+                requires: [apt-get, sudo]
+                actions:
+                  - kind: command
+                    argv: ["sudo", "apt-get", "install", "-y", "awscli"]
+                    interactive: true
+                    elevation: may-prompt
+                    timeout_seconds: 900
+                path_hints: ["/usr/bin", "/usr/local/bin"]
+              - id: dnf
+                requires: [dnf, sudo]
+                actions:
+                  - kind: command
+                    argv: ["sudo", "dnf", "install", "-y", "awscli"]
+                    interactive: true
+                    elevation: may-prompt
+                    timeout_seconds: 900
+                path_hints: ["/usr/bin", "/usr/local/bin"]
+              - id: manual
+                actions:
+                  - kind: instructions
+                    message: >-
+                      Install AWS CLI v2 with your distribution's package manager or the
+                      official installer, then run "aziron skill prepare aws-master".
+
+    prerequisites:
+      - id: authenticate-aws
+        label: Configure AWS authentication
+        when:
+          precheck: aws-identity
+        platforms:
+          all:
+            select: prompt
+            strategies:
+              - id: sso-new
+                label: Configure a new AWS SSO profile
+                actions:
+                  - kind: command
+                    argv: ["aws", "configure", "sso"]
+                    interactive: true
+                    sensitive_input: true
+                    timeout_seconds: 600
+              - id: sso-login
+                label: Log into an existing AWS SSO profile
+                default: true
+                actions:
+                  - kind: command
+                    argv: ["aws", "sso", "login"]
+                    interactive: true
+                    timeout_seconds: 600
+              - id: later
+                label: Configure manually later
+                actions:
+                  - kind: instructions
+                    message: >-
+                      Configure AWS authentication, then run
+                      "aziron skill prepare aws-master".
+
+    configure:
+      - id: configure-region
+        label: Configure the default AWS region
+        platforms:
+          all:
+            actions:
+              - kind: command
+                argv: ["aws", "configure", "set", "region", "{{prompt.aws-region}}"]
+                prompts:
+                  - id: aws-region
+                    label: AWS region
+                    required: true
+                    default: us-east-1
+
+  verify:
+    rerun_precheck: true

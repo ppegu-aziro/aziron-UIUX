@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 import { VAULT_VARIABLES } from "@/data/agentsV2";
 import { resolveCandidates, resolveVault, tokenBehindCaret } from "./utils/suggest";
 import { suggestJson } from "./utils/agentJsonSuggest";
+import { suggestYaml } from "./utils/preparation/suggest";
+import { insidePromptTemplate } from "./utils/preparation/yamlPath";
 
 /**
  * Autocomplete in the file editor, for the two things an agent's files
@@ -124,6 +126,9 @@ export default function EditorSuggest({
   // widget, which is also what keeps {{VAULT}} working inside a JSON string.
   mode = "markdown",
   agent,
+  // The parsed preparation document, for the completions that depend on it —
+  // which prechecks exist, which prompts an action declared.
+  prepDoc = null,
 }) {
   // { kind, token, start, items, index, top }
   const [state, setState] = useState(null);
@@ -166,6 +171,31 @@ export default function EditorSuggest({
       return;
     }
 
+    if (mode === "yaml" && !insidePromptTemplate(value, caret) && found?.kind !== "vault") {
+      // The prompt-placeholder check comes FIRST because the vault's own token
+      // pattern matches `{{prompt` — all word characters — and would answer an
+      // argv placeholder with a list of vault variables.
+      const hit = suggestYaml(value, caret, { js: prepDoc });
+      if (!hit || hit.token === dismissed.current) {
+        if (!hit) dismissed.current = null;
+        setState(null);
+        return;
+      }
+      dismissed.current = null;
+      setState((prev) => ({
+        kind: "yaml",
+        token: hit.token,
+        start: hit.start,
+        end: hit.end,
+        quoted: hit.quoted,
+        heading: hit.heading,
+        items: hit.items,
+        pos: place(el, value, hit.start, hit.items.length),
+        index: prev?.token === hit.token && prev?.kind === "yaml" ? (prev.index ?? 0) : 0,
+      }));
+      return;
+    }
+
     if (!found) {
       dismissed.current = null;
       setState(null);
@@ -193,13 +223,21 @@ export default function EditorSuggest({
       pos: place(el, value, found.start, items.length),
       index: prev?.token === found.token ? (prev.index ?? 0) : 0,
     }));
-  }, [textareaRef, value, currentPath, files, folders, mode, agent]);
+  }, [textareaRef, value, currentPath, files, folders, mode, agent, prepDoc]);
 
   const choose = useCallback(
     (item) => {
       if (!state || !item) return;
 
-      if (state.kind === "json") {
+      if (state.kind === "yaml") {
+        // The item's own text, always. The default below is JSON quoting, and a
+        // quoted `"apt-get"` where the contract wants the bare scalar is a
+        // different value, not a different style.
+        const inserted = item.insert ?? item.value;
+        // A key completion still wants its value typed, so the list stays open.
+        dismissed.current = item.keepOpen ? null : inserted;
+        onInsert(state.start, state.end, inserted);
+      } else if (state.kind === "json") {
         // The scanner reports the span through the closing quote, so replacing
         // it is what stops an accepted mid-word completion leaving the tail of
         // the old value behind.
@@ -263,7 +301,8 @@ export default function EditorSuggest({
 
   const isVault = state.kind === "vault";
   const isJson = state.kind === "json";
-  const LABEL = { vault: "Vault variables", json: state.heading, path: "Path suggestions" };
+  const isYaml = state.kind === "yaml";
+  const LABEL = { vault: "Vault variables", json: state.heading, yaml: state.heading, path: "Path suggestions" };
 
   /*
     Deliberately small and see-through.
@@ -295,8 +334,8 @@ export default function EditorSuggest({
     >
       {state.items.map((item, i) => {
         // Vault and path entries are keyed by `name`, schema entries by `value`.
-        const text = isJson ? item.value : item.name;
-        const detail = isJson ? (item.group ?? item.note) : item.note;
+        const text = isJson || isYaml ? item.value : item.name;
+        const detail = isJson || isYaml ? (item.group ?? item.note) : item.note;
         const on = i === state.index;
         return (
           <button
@@ -317,7 +356,7 @@ export default function EditorSuggest({
           >
             {isVault ? (
               <KeyRound className="size-2.5 shrink-0 opacity-70" aria-hidden />
-            ) : isJson ? (
+            ) : isJson || isYaml ? (
               <Braces className="size-2.5 shrink-0 opacity-60" aria-hidden />
             ) : item.isDir ? (
               <FolderClosed className="size-2.5 shrink-0 text-primary/70" aria-hidden />
@@ -326,7 +365,7 @@ export default function EditorSuggest({
             )}
 
             <span className="truncate font-mono text-[11px]">
-              {isVault || isJson ? text : `${text}${item.isDir ? "/" : ""}`}
+              {isVault || isJson || isYaml ? text : `${text}${item.isDir ? "/" : ""}`}
             </span>
 
             {/* The schema's hint, verbatim — the same sentence the form shows

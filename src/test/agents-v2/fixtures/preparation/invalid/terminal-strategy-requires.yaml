@@ -1,0 +1,33 @@
+# The no-dead-end rule. Every strategy here is conditional, so a machine with
+# neither winget nor choco silently does nothing and the user is told the skill
+# is "not ready" with no way forward. This is the exact shape of the bug the
+# schema exists to prevent, so it must be rejected at authoring time.
+schema: 1
+
+preparation:
+  precheck:
+    - id: gh
+      platforms:
+        all:
+          check:
+            kind: binary
+            value: gh
+
+  preconfigure:
+    commands:
+      - id: install-gh
+        when:
+          precheck: gh
+        platforms:
+          windows:
+            strategies:
+              - id: winget
+                requires: [winget]
+                actions:
+                  - kind: command
+                    argv: ["winget", "install", "--id", "GitHub.cli"]
+              - id: choco
+                requires: [choco]
+                actions:
+                  - kind: command
+                    argv: ["choco", "install", "gh"]

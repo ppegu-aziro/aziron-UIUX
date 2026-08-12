@@ -11,6 +11,8 @@
  * distinction.
  */
 
+import { SEED } from "@/data/preparationSchema";
+
 /* ── vocabulary ──────────────────────────────────────────────────────────── */
 
 export const TARGETS = [
@@ -188,7 +190,7 @@ export const AGENTS_V2 = [
       f("references/eksctl.md", "# eksctl\n\nCommon flags and cluster config examples.\n"),
       f("references/iam.md", "# IAM\n\nRoles and trust policies required for node groups.\n"),
       f("scripts/preflight.sh", "#!/usr/bin/env bash\nset -euo pipefail\naws sts get-caller-identity\n"),
-      f(".aziron/preparation.yaml", "schema: 1\npreparation:\n  precheck:\n    - id: eksctl\n      label: eksctl installed\n"),
+      f(".aziron/preparation.yaml", SEED),
     ],
     updated: "6 days ago",
   }),
@@ -246,7 +248,7 @@ export const AGENTS_V2 = [
       f("AGENT.md", INSTR("Incident Commander", "Run the incident bridge end to end.")),
       f("references/severity.md", "# Severity matrix\n\nSEV1 through SEV4 with examples.\n"),
       f("workflows/bridge.md", "# Bridge workflow\n\n1. Triage\n2. Open ticket\n3. Status page\n"),
-      f(".aziron/preparation.yaml", "schema: 1\npreparation:\n  precheck:\n    - id: gh\n      label: gh CLI installed\n"),
+      f(".aziron/preparation.yaml", SEED),
     ],
     updated: "3 days ago",
   }),
@@ -354,7 +356,7 @@ export const AGENTS_V2 = [
     files: [
       f("AGENT.md", INSTR("Cloud Cost Optimiser", "Find idle and oversized resources.")),
       f("references/rightsizing.md", "# Rightsizing\n\nInstance families and when to downshift.\n"),
-      f(".aziron/preparation.yaml", "schema: 1\npreparation:\n  precheck:\n    - id: aws\n      label: AWS CLI installed\n"),
+      f(".aziron/preparation.yaml", SEED),
     ],
     updated: "4 days ago",
   }),

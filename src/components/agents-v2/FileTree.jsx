@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { SEED } from "@/data/preparationSchema";
 
 /**
  * File explorer for an agent's folder.
@@ -101,7 +102,7 @@ const SUGGESTED = [
     dir: ".aziron",
     job: "setup checks before it runs",
     seed: ".aziron/preparation.yaml",
-    content: `schema: 1\n\npreparation:\n  precheck:\n    - id: cli\n      label: Required CLI installed\n`,
+    content: SEED,
   },
 ];
 

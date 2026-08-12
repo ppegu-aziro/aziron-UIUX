@@ -1,0 +1,14 @@
+# A typo in a key. The SKILL.md frontmatter parser would ignore this silently,
+# which is tolerable for descriptive metadata; here it would publish a skill
+# that reports itself ready having probed nothing at all. Unknown fields are
+# therefore rejected outright.
+schema: 1
+
+preparation:
+  precheks:
+    - id: aws-cli
+      platforms:
+        all:
+          check:
+            kind: binary
+            value: aws

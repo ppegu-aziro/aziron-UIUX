@@ -1,0 +1,115 @@
+# Preparation for report-incident.
+#
+# The configuration case: this skill needs a GitHub token and a target
+# repository, and neither can be discovered — they have to be asked for and
+# stored. The env-file action writes them 0600 in a 0700 directory, merges with
+# whatever is already there rather than overwriting it, and never echoes a
+# secret back to the screen.
+schema: 1
+
+preparation:
+  prompt: Configure incident reporting now?
+
+  precheck:
+    - id: gh
+      label: GitHub CLI installed
+      dedup_key: gh
+      platforms:
+        all:
+          check:
+            kind: binary
+            value: gh
+
+    - id: incident-config
+      label: Incident reporting configured
+      platforms:
+        all:
+          check:
+            kind: env-file
+            value: ~/.aziron/incident.env
+            keys: [GITHUB_TOKEN, INCIDENT_REPO]
+
+  preconfigure:
+    commands:
+      - id: install-gh
+        label: Install the GitHub CLI
+        when:
+          precheck: gh
+        platforms:
+          windows:
+            strategies:
+              - id: winget
+                requires: [winget]
+                actions:
+                  - kind: command
+                    argv: ["winget", "install", "--id", "GitHub.cli", "--exact",
+                           "--accept-package-agreements", "--accept-source-agreements"]
+                    interactive: true
+                    elevation: may-prompt
+                    timeout_seconds: 600
+                path_hints: ['%ProgramFiles%\GitHub CLI']
+              - id: manual
+                actions:
+                  - kind: instructions
+                    message: Install the GitHub CLI from https://cli.github.com/ and re-run preparation.
+          darwin:
+            strategies:
+              - id: homebrew
+                requires: [brew]
+                actions:
+                  - kind: command
+                    argv: ["brew", "install", "gh"]
+                    interactive: true
+                    timeout_seconds: 600
+                path_hints: ["/opt/homebrew/bin", "/usr/local/bin"]
+              - id: manual
+                actions:
+                  - kind: instructions
+                    message: Install the GitHub CLI from https://cli.github.com/ and re-run preparation.
+          linux:
+            strategies:
+              - id: apt
+                requires: [apt-get, sudo]
+                actions:
+                  - kind: command
+                    argv: ["sudo", "apt-get", "install", "-y", "gh"]
+                    interactive: true
+                    elevation: may-prompt
+                    timeout_seconds: 600
+                path_hints: ["/usr/bin", "/usr/local/bin"]
+              - id: dnf
+                requires: [dnf, sudo]
+                actions:
+                  - kind: command
+                    argv: ["sudo", "dnf", "install", "-y", "gh"]
+                    interactive: true
+                    elevation: may-prompt
+                    timeout_seconds: 600
+                path_hints: ["/usr/bin", "/usr/local/bin"]
+              - id: manual
+                actions:
+                  - kind: instructions
+                    message: Install the GitHub CLI from https://cli.github.com/ and re-run preparation.
+
+    configure:
+      - id: write-incident-config
+        label: Record the incident repository and token
+        when:
+          precheck: incident-config
+        platforms:
+          all:
+            actions:
+              - kind: env-file
+                path: ~/.aziron/incident.env
+                vars:
+                  - name: INCIDENT_REPO
+                    label: "Repository for incident issues (owner/repo)"
+                    required: true
+                  - name: GITHUB_TOKEN
+                    label: GitHub token with issues:write
+                    required: true
+                    # Not echoed when read, and never written to readiness state.
+                    secret: true
+
+  verify:
+    rerun_precheck: true

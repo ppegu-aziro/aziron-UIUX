@@ -1,0 +1,27 @@
+# The simplest useful document: one binary probe and a manual remediation.
+# A skill that only needs "is this tool present?" should not have to write
+# strategies, timeouts or a verify block.
+schema: 1
+
+preparation:
+  precheck:
+    - id: terraform
+      label: Terraform installed
+      dedup_key: terraform
+      platforms:
+        all:
+          check:
+            kind: binary
+            value: terraform
+
+  preconfigure:
+    commands:
+      - id: install-terraform
+        label: Install Terraform
+        when:
+          precheck: terraform
+        platforms:
+          all:
+            actions:
+              - kind: instructions
+                message: Install Terraform from https://developer.hashicorp.com/terraform/install

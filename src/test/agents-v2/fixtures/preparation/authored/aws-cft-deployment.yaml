@@ -1,0 +1,34 @@
+# Preparation for aws-cft-deployment.
+#
+# The minimal shape: one thing has to be present, and if it is not, the user is
+# told where to get it. A skill should not have to write strategies, timeouts or
+# a verify block to say that.
+schema: 1
+
+preparation:
+  precheck:
+    - id: aws-cli
+      label: AWS CLI installed
+      # Same identity the other AWS skills use, so installing a bundle checks
+      # and installs it once rather than once per skill.
+      dedup_key: aws-cli@2
+      platforms:
+        all:
+          check:
+            kind: binary
+            value: aws
+
+  preconfigure:
+    commands:
+      - id: install-aws-cli
+        label: Install AWS CLI v2
+        when:
+          precheck: aws-cli
+        platforms:
+          all:
+            actions:
+              - kind: instructions
+                message: >-
+                  Install AWS CLI v2 — see
+                  https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html —
+                  then run "aziron skill prepare aws-cft-deployment".

@@ -1,0 +1,87 @@
+{
+  "schema": 1,
+  "preparation": {
+    "prompt": "Set up the container toolchain?",
+    "precheck": [
+      {
+        "id": "docker",
+        "label": "Docker available",
+        "platforms": {
+          "darwin": {
+            "check": {
+              "kind": "command",
+              "argv": [
+                "docker",
+                "info"
+              ],
+              "timeout_seconds": 10
+            }
+          },
+          "linux": {
+            "check": {
+              "kind": "command",
+              "argv": [
+                "docker",
+                "info"
+              ],
+              "timeout_seconds": 10
+            }
+          },
+          "windows": {
+            "check": {
+              "kind": "command",
+              "argv": [
+                "docker",
+                "version"
+              ],
+              "timeout_seconds": 30
+            }
+          }
+        }
+      }
+    ],
+    "preconfigure": {
+      "configure": [
+        {
+          "id": "write-registry-env",
+          "label": "Record registry credentials",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "platforms": {
+            "all": {
+              "select": "auto",
+              "strategies": [
+                {
+                  "id": "default",
+                  "actions": [
+                    {
+                      "kind": "env-file",
+                      "path": "~/.aziron/registry.env",
+                      "vars": [
+                        {
+                          "name": "REGISTRY_URL",
+                          "label": "Registry URL",
+                          "required": true,
+                          "default": "https://index.docker.io/v1/"
+                        },
+                        {
+                          "name": "REGISTRY_TOKEN",
+                          "label": "Registry token",
+                          "secret": true,
+                          "required": true
+                        }
+                      ],
+                      "elevation": "none"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

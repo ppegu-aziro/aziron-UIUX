@@ -1,0 +1,308 @@
+# Preparation for aws-environment-setup.
+#
+# This skill's whole job is telling a user what their AWS environment is missing
+# and exactly which command fixes it. That was previously prose in SKILL.md that
+# a human had to read and act on; this file is the same knowledge in a form
+# aziron-cli can check and, with consent, act on.
+#
+# The manual guidance stays in SKILL.md on purpose. An agent working without the
+# CLI still needs to be able to prepare an environment, and this file is not
+# readable guidance.
+schema: 1
+
+preparation:
+  prompt: Set up the AWS environment for this skill now?
+
+  precheck:
+    - id: aws-cli
+      label: AWS CLI v2 installed
+      # Machine-wide, and shared with every other AWS skill: a bundle that pulls
+      # in five of them checks and installs this once.
+      dedup_key: aws-cli@2
+      platforms:
+        all:
+          check:
+            kind: command
+            argv: ["aws", "--version"]
+            timeout_seconds: 10
+            expect:
+              # Presence is not enough. The v1 CLI answers `aws --version`
+              # perfectly happily and then fails on everything this skill does.
+              min_version: "2.0.0"
+              version_from: 'aws-cli/(\d+\.\d+\.\d+)'
+
+    - id: aws-identity
+      label: AWS credentials valid
+      depends_on: [aws-cli]
+      platforms:
+        all:
+          check:
+            kind: command
+            argv: ["aws", "sts", "get-caller-identity"]
+            timeout_seconds: 20
+            # Prints the account id and the caller's ARN. Never read it.
+            sensitive_output: true
+
+    - id: aws-region
+      label: Default AWS region configured
+      depends_on: [aws-cli]
+      platforms:
+        all:
+          check:
+            kind: command
+            argv: ["aws", "configure", "get", "region"]
+            timeout_seconds: 10
+
+    - id: git
+      label: Git installed
+      dedup_key: git
+      platforms:
+        all:
+          check:
+            kind: binary
+            value: git
+
+    - id: gh
+      label: GitHub CLI installed
+      dedup_key: gh
+      platforms:
+        all:
+          check:
+            kind: binary
+            value: gh
+
+  preconfigure:
+    commands:
+      - id: install-aws-cli
+        label: Install AWS CLI v2
+        when:
+          precheck: aws-cli
+        platforms:
+          windows:
+            strategies:
+              - id: winget
+                requires: [winget]
+                actions:
+                  - kind: command
+                    argv:
+                      - winget
+                      - install
+                      - --id
+                      - Amazon.AWSCLI
+                      - --exact
+                      - --accept-package-agreements
+                      - --accept-source-agreements
+                    interactive: true
+                    elevation: may-prompt
+                    timeout_seconds: 900
+                # winget registers the CLI by editing the machine PATH, which a
+                # process started before the install cannot see. Naming the
+                # directory here is what lets verification succeed in the same
+                # run instead of telling the user to reopen their terminal.
+                path_hints: ['%ProgramFiles%\Amazon\AWSCLIV2']
+              - id: msi
+                requires: [msiexec]
+                actions:
+                  - kind: command
+                    argv: ["msiexec", "/i", "https://awscli.amazonaws.com/AWSCLIV2.msi", "/qn"]
+                    elevation: required
+                    timeout_seconds: 900
+                path_hints: ['%ProgramFiles%\Amazon\AWSCLIV2']
+              - id: manual
+                actions:
+                  - kind: instructions
+                    message: >-
+                      Install AWS CLI v2 from https://awscli.amazonaws.com/AWSCLIV2.msi,
+                      then run "aziron skill prepare aws-environment-setup".
+          darwin:
+            strategies:
+              - id: homebrew
+                requires: [brew]
+                actions:
+                  - kind: command
+                    argv: ["brew", "install", "awscli"]
+                    interactive: true
+                    timeout_seconds: 900
+                path_hints: ["/opt/homebrew/bin", "/usr/local/bin"]
+              - id: manual
+                actions:
+                  - kind: instructions
+                    message: >-
+                      Install AWS CLI v2 from https://awscli.amazonaws.com/AWSCLIV2.pkg,
+                      then run "aziron skill prepare aws-environment-setup".
+          linux:
+            strategies:
+              # No apt/dnf strategy: the distribution packages are frequently
+              # the v1 CLI, which would install successfully and then fail the
+              # version check. Better to say so than to appear to work.
+              - id: manual
+                actions:
+                  - kind: instructions
+                    message: >-
+                      Install AWS CLI v2 with the official installer
+                      (https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) —
+                      most distribution packages still ship v1, which this skill cannot use.
+                      Then run "aziron skill prepare aws-environment-setup".
+
+      - id: install-gh
+        label: Install the GitHub CLI
+        when:
+          precheck: gh
+        platforms:
+          windows:
+            strategies:
+              - id: winget
+                requires: [winget]
+                actions:
+                  - kind: command
+                    argv: ["winget", "install", "--id", "GitHub.cli", "--exact",
+                           "--accept-package-agreements", "--accept-source-agreements"]
+                    interactive: true
+                    elevation: may-prompt
+                    timeout_seconds: 600
+                path_hints: ['%ProgramFiles%\GitHub CLI']
+              - id: manual
+                actions:
+                  - kind: instructions
+                    message: Install the GitHub CLI from https://cli.github.com/ and re-run preparation.
+          darwin:
+            strategies:
+              - id: homebrew
+                requires: [brew]
+                actions:
+                  - kind: command
+                    argv: ["brew", "install", "gh"]
+                    interactive: true
+                    timeout_seconds: 600
+                path_hints: ["/opt/homebrew/bin", "/usr/local/bin"]
+              - id: manual
+                actions:
+                  - kind: instructions
+                    message: Install the GitHub CLI from https://cli.github.com/ and re-run preparation.
+          linux:
+            strategies:
+              - id: apt
+                requires: [apt-get, sudo]
+                actions:
+                  - kind: command
+                    argv: ["sudo", "apt-get", "install", "-y", "gh"]
+                    interactive: true
+                    elevation: may-prompt
+                    timeout_seconds: 600
+                path_hints: ["/usr/bin", "/usr/local/bin"]
+              - id: dnf
+                requires: [dnf, sudo]
+                actions:
+                  - kind: command
+                    argv: ["sudo", "dnf", "install", "-y", "gh"]
+                    interactive: true
+                    elevation: may-prompt
+                    timeout_seconds: 600
+                path_hints: ["/usr/bin", "/usr/local/bin"]
+              - id: manual
+                actions:
+                  - kind: instructions
+                    message: Install the GitHub CLI from https://cli.github.com/ and re-run preparation.
+
+      - id: install-git
+        label: Install Git
+        when:
+          precheck: git
+        platforms:
+          all:
+            actions:
+              - kind: instructions
+                message: >-
+                  Install Git from https://git-scm.com/downloads, then run
+                  "aziron skill prepare aws-environment-setup".
+
+    prerequisites:
+      - id: authenticate-aws
+        label: Set up AWS credentials
+        when:
+          precheck: aws-identity
+        platforms:
+          all:
+            # Only the person at the keyboard knows which of these applies.
+            # The CLI presents them and runs exactly one.
+            select: prompt
+            strategies:
+              - id: sso-new
+                label: Set up a new AWS SSO profile
+                actions:
+                  - kind: command
+                    argv: ["aws", "configure", "sso"]
+                    interactive: true
+                    sensitive_input: true
+                    timeout_seconds: 900
+              - id: sso-login
+                label: Log in to an AWS SSO profile I already have
+                # The default for unattended runs: it refreshes an existing
+                # session rather than creating new configuration.
+                default: true
+                actions:
+                  - kind: command
+                    argv: ["aws", "sso", "login"]
+                    interactive: true
+                    timeout_seconds: 900
+              - id: static
+                label: Enter access keys directly
+                actions:
+                  - kind: command
+                    argv: ["aws", "configure"]
+                    interactive: true
+                    sensitive_input: true
+                    timeout_seconds: 600
+              - id: later
+                label: I will set this up myself later
+                actions:
+                  - kind: instructions
+                    message: >-
+                      Configure AWS credentials however your organisation requires, then run
+                      "aziron skill prepare aws-environment-setup" to confirm.
+
+      - id: authenticate-github
+        label: Log in to GitHub
+        when:
+          precheck: gh
+          status: satisfied
+        platforms:
+          all:
+            select: prompt
+            strategies:
+              - id: gh-login
+                label: Log in with the GitHub CLI now
+                default: true
+                actions:
+                  - kind: command
+                    argv: ["gh", "auth", "login"]
+                    interactive: true
+                    sensitive_input: true
+                    timeout_seconds: 900
+              - id: later
+                label: Skip — I am already logged in, or will do it later
+                actions:
+                  - kind: instructions
+                    message: Run "gh auth login" when you need GitHub access.
+
+    configure:
+      - id: configure-region
+        label: Set the default AWS region
+        when:
+          precheck: aws-region
+        platforms:
+          all:
+            actions:
+              - kind: command
+                argv: ["aws", "configure", "set", "region", "{{prompt.region}}"]
+                timeout_seconds: 30
+                prompts:
+                  - id: region
+                    label: Default AWS region
+                    required: true
+                    default: us-east-1
+
+  verify:
+    # Re-probe rather than trusting that the commands exited zero. An installer
+    # succeeding and the tool being usable are different claims.
+    rerun_precheck: true

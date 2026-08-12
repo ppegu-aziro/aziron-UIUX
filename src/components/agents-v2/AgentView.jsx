@@ -31,6 +31,7 @@ import {
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { AGENT_JSON_PATH } from "@/data/agentJsonSchema";
+import { PREPARATION_PATH } from "@/data/preparationSchema";
 import { useAgentsV2 } from "@/context/AgentsV2Context";
 import { KnowledgeDialog, ModelDialog, ReleaseDialog, ToolsDialog } from "./dialogs";
 import FileTree from "./FileTree";
@@ -41,6 +42,7 @@ import FrontmatterEditor from "./FrontmatterEditor";
 import AssistantPanel from "./AssistantPanel";
 import EditorSuggest from "./EditorSuggest";
 import AgentJsonView from "./AgentJsonView";
+import PreparationView from "./PreparationView";
 import Resizer from "./Resizer";
 
 /**
@@ -172,6 +174,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
 
   const isEntry = activeFile.path === "AGENT.md";
   const isConfig = activeFile.path === AGENT_JSON_PATH;
+  const isPrep = activeFile.path === PREPARATION_PATH;
   const content = buffer?.path === activeFile.path ? buffer.value : activeFile.content;
   // True while a keystroke is still sitting in the debounce. The Save button
   // exists to end that window on demand rather than to gate the write.
@@ -520,7 +523,23 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
               </div>
             </div>
 
-            {isConfig ? (
+            {isPrep ? (
+              /*
+                No onEditField or onApplyPatch here, unlike agent.json. Those
+                write to the RECORD, and preparation.yaml's truth is its own
+                bytes — their absence is what enforces that the setup pane
+                cannot commit anything.
+              */
+              <PreparationView
+                agent={agent}
+                text={content}
+                files={files}
+                folders={agent.folders}
+                textareaRef={textareaRef}
+                onChangeText={writeFile}
+                onInsert={insertAtCaret}
+              />
+            ) : isConfig ? (
               <AgentJsonView
                 agent={agent}
                 text={content}

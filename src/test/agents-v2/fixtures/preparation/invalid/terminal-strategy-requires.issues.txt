@@ -1,0 +1,1 @@
+preparation.preconfigure.commands[0].platforms.windows.strategies[1].requires runnable unconditionally

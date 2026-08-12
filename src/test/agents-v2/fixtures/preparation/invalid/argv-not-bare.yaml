@@ -1,0 +1,24 @@
+# argv[0] must be a bare name resolved through the user's own PATH. An absolute
+# path lets a skill point at a binary it controls; a relative path lets it
+# traverse. Both are rejected, in probes and in actions alike.
+schema: 1
+
+preparation:
+  precheck:
+    - id: helper
+      platforms:
+        all:
+          check:
+            kind: command
+            argv: ["/opt/vendor/bin/helper", "--check"]
+
+  preconfigure:
+    commands:
+      - id: run-helper
+        when:
+          precheck: helper
+        platforms:
+          all:
+            actions:
+              - kind: command
+                argv: ["../scripts/setup.sh"]

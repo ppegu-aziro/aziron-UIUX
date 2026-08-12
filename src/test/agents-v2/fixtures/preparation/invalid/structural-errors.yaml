@@ -1,0 +1,58 @@
+# A pile-up of independent structural mistakes in one document. Validation must
+# report all of them in a single pass: an author fixing a preparation file
+# should see the whole list, not discover the next problem on the next release
+# attempt.
+#
+#   - duplicate precheck id
+#   - a depends_on that names nothing
+#   - an unknown platform key
+#   - when: naming a precheck that does not exist
+#   - select: prompt with a single strategy, and no label to choose it by
+#   - a placeholder the action never declared
+#   - sensitive_output paired with a matcher that could never see the output
+schema: 1
+
+preparation:
+  precheck:
+    - id: docker
+      platforms:
+        all:
+          check:
+            kind: binary
+            value: docker
+
+    - id: docker
+      platforms:
+        all:
+          check:
+            kind: binary
+            value: docker-compose
+
+    - id: registry-auth
+      depends_on: [not-a-precheck]
+      platforms:
+        freebsd:
+          check:
+            kind: command
+            argv: ["docker", "login", "--help"]
+        all:
+          check:
+            kind: command
+            argv: ["docker", "info"]
+            sensitive_output: true
+            expect:
+              stdout_regex: "Username"
+
+  preconfigure:
+    prerequisites:
+      - id: authenticate
+        when:
+          precheck: ghost-check
+        platforms:
+          all:
+            select: prompt
+            strategies:
+              - id: only-one
+                actions:
+                  - kind: command
+                    argv: ["docker", "login", "--username", "{{prompt.username}}"]

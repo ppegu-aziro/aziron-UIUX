@@ -1,0 +1,29 @@
+# A depends_on cycle would leave the planner with no probe it can start from.
+# Rejected at publish so it can never reach a user's machine.
+schema: 1
+
+preparation:
+  precheck:
+    - id: alpha
+      depends_on: [gamma]
+      platforms:
+        all:
+          check:
+            kind: binary
+            value: alpha
+
+    - id: beta
+      depends_on: [alpha]
+      platforms:
+        all:
+          check:
+            kind: binary
+            value: beta
+
+    - id: gamma
+      depends_on: [beta]
+      platforms:
+        all:
+          check:
+            kind: binary
+            value: gamma
