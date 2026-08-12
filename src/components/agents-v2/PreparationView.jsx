@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Columns2, FileCode, Info, ListChecks } from "lucide-react";
+import { AlertTriangle, Columns2, FileCode, Info, ListChecks, Wand2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -7,6 +8,9 @@ import { cn } from "@/lib/utils";
 import { PREPARATION_PATH, OS_TABS } from "@/data/preparationSchema";
 import { lineOfPath, parsePreparation, pathAt } from "./utils/preparation/document";
 import { lintPreparation } from "./utils/preparation/lint";
+import { repairFor } from "./utils/preparation/repairs";
+import { applyEdit, applyRepair } from "./utils/preparation/edit";
+import { appendItem, renderFragment } from "./utils/preparation/yamlSplice";
 import PreparationSetup from "./PreparationSetup";
 import EditorSuggest from "./EditorSuggest";
 
@@ -47,7 +51,7 @@ function defaultGoos() {
   return "linux";
 }
 
-function Problems({ problems, onJump }) {
+function Problems({ problems, onJump, onFix }) {
   if (!problems.length) return null;
   const errors = problems.filter((p) => p.severity === "error");
   return (
@@ -76,6 +80,22 @@ function Problems({ problems, onJump }) {
             )}
             {p.message}
           </span>
+          {/* A fix is offered only where one is unambiguously right. A wand
+              that sometimes guesses wrong is one people stop pressing, and then
+              the ones that are right go unpressed too. */}
+          {p.fix && (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              className="shrink-0"
+              title={p.fix.title}
+              onClick={() => onFix(p.fix)}
+            >
+              <Wand2 className="size-3" aria-hidden />
+              {p.fix.label}
+            </Button>
+          )}
         </div>
       ))}
     </div>
@@ -116,7 +136,13 @@ export default function PreparationView({
 
   const live = useMemo(() => parsePreparation(text), [text]);
   const shown = useMemo(() => parsePreparation(settled), [settled]);
-  const problems = useMemo(() => (shown.js ? lintPreparation(shown.js) : []), [shown]);
+  const problems = useMemo(() => {
+    if (!shown.js) return [];
+    return lintPreparation(shown.js).map((p) => ({
+      ...p,
+      fix: repairFor(p, settled, shown.doc, shown.js),
+    }));
+  }, [shown, settled]);
 
   /**
    * The Setup pane renders the SETTLED parse, not the live one.
@@ -152,6 +178,48 @@ export default function PreparationView({
     const el = ref.current;
     if (!el || !live.doc) return;
     setCursorPath(pathAt(live.doc, el.selectionStart ?? 0));
+  };
+
+  /**
+   * Write, then say what happened.
+   *
+   * Every write goes through the same gate, which refuses anything that would
+   * leave the file unparseable — a splice bug must never be saved over what the
+   * user had. Undo is exact rather than approximate: a splice is a range and
+   * two strings, so putting the old text back is the same operation reversed.
+   */
+  const commit = (result, describe) => {
+    if (!result.ok) {
+      toast.error(result.why);
+      return;
+    }
+    onChangeText(result.text);
+    toast.success(describe, {
+      description: "Saved into the file.",
+      action: { label: "Undo", onClick: () => onChangeText(result.before) },
+    });
+  };
+
+  const editValue = (path, value) =>
+    commit(applyEdit(text, live.doc ?? shown.doc, path, value), "Updated");
+
+  const fix = (repair) => commit(applyRepair(repair, settled), repair.label);
+
+  /** Add a precheck or a step, from the inline form. */
+  const add = (where, item) => {
+    const doc = live.doc ?? shown.doc;
+    const segments = ["preparation", ...where.split(".")];
+    const result = appendItem(text, doc, segments, renderFragment(item));
+    if (!result) {
+      toast.error("There is nowhere to put that yet.");
+      return;
+    }
+    const check = parsePreparation(result.text);
+    if (check.fatal || check.errors.length) {
+      toast.error("That would break the file, so it was not added.");
+      return;
+    }
+    commit({ ok: true, text: result.text, before: text }, `Added ${item.label || item.id}`);
   };
 
   const showSetup = mode === "setup" || mode === "split";
@@ -199,7 +267,7 @@ export default function PreparationView({
         )}
       </div>
 
-      <Problems problems={problems} onJump={jump} />
+      <Problems problems={problems} onJump={jump} onFix={fix} />
 
       <div className={cn("flex min-h-0 flex-1", showSetup && showYaml ? "flex-col lg:flex-row" : "flex-col")}>
         {showSetup && (
@@ -216,6 +284,12 @@ export default function PreparationView({
               stale={stale}
               cursorPath={cursorPath}
               onJump={jump}
+              {...(live.js
+                ? { onEdit: editValue, onAdd: add }
+                : // Nothing is editable while the text does not parse: the
+                  // splice targets are found in the tree, and the tree is the
+                  // one that was last valid, not the one on screen.
+                  {})}
             />
           </div>
         )}

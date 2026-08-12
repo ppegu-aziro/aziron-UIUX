@@ -1,9 +1,12 @@
-import { useMemo } from "react";
-import { AlertTriangle, Check, Hand, Minus, MessageCircleQuestion } from "lucide-react";
+import { useMemo, useState } from "react";
+import { AlertTriangle, Check, Hand, Minus, MessageCircleQuestion, Plus } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { OS_TABS } from "@/data/preparationSchema";
+import { Button } from "@/components/ui/button";
 import { coverageOf, missingPlatforms, planFor } from "./utils/preparation/resolve";
+import { InlineText } from "./PreparationField";
+import PreparationAddForm from "./PreparationAddForm";
 import PreparationStepCard, { CheckRow } from "./PreparationStepCard";
 
 /**
@@ -37,10 +40,30 @@ const MARK = {
   undefined: { ch: "✕", cls: "text-destructive", title: "No definition — skipped on this machine" },
 };
 
-export default function PreparationSetup({ js, goos, onGoos, stale, cursorPath, onJump }) {
+export default function PreparationSetup({
+  js,
+  goos,
+  onGoos,
+  stale,
+  cursorPath,
+  onJump,
+  // Absent when the document does not parse: nothing is editable then, and
+  // the pane keeps rendering the last version that did.
+  onEdit,
+  onAdd,
+}) {
+  const [adding, setAdding] = useState(null);
   const plans = useMemo(() => Object.fromEntries(OS_TABS.map((t) => [t.goos, planFor(js, t.goos)])), [js]);
   const gaps = useMemo(() => missingPlatforms(js), [js]);
   const plan = plans[goos];
+
+  // Every id in the document. Steps share one namespace across all three
+  // phases, so a clash check that only looked at one would miss most of them.
+  const takenIds = useMemo(() => {
+    const prep = js?.preparation ?? {};
+    const steps = ["prerequisites", "commands", "configure"].flatMap((k) => prep.preconfigure?.[k] ?? []);
+    return [...(prep.precheck ?? []), ...steps].map((n) => n?.id).filter(Boolean);
+  }, [js]);
 
   /** Every node once, with its mark per machine — the "what is missing" table. */
   const matrix = useMemo(() => {
@@ -170,13 +193,34 @@ export default function PreparationSetup({ js, goos, onGoos, stale, cursorPath, 
         </div>
 
         <div className="space-y-3 p-3">
-          {plan.prompt && (
+          {/*
+            The one field with no scope question at all: `preparation.prompt` is
+            a single scalar that is not inside a platforms map, so editing it
+            reaches exactly one place. The quote marks are decoration and never
+            enter the file.
+          */}
+          {(plan.prompt || onEdit) && (
             <div className="rounded-lg border border-border/60 bg-muted/15 px-3 py-2">
               <p className="flex items-center gap-1.5 text-[10px] tracking-wide text-muted-foreground uppercase">
                 <MessageCircleQuestion className="size-3" aria-hidden />
                 Asked once, before anything runs
               </p>
-              <p className="mt-0.5 text-xs text-foreground">“{plan.prompt}”</p>
+              <p className="mt-0.5 text-xs text-foreground">
+                {onEdit ? (
+                  <>
+                    “
+                    <InlineText
+                      value={plan.prompt ?? ""}
+                      label="The question asked before setup runs"
+                      placeholder="Set up this machine for the agent now?"
+                      onCommit={(v) => onEdit(["preparation", "prompt"], v)}
+                    />
+                    ”
+                  </>
+                ) : (
+                  `“${plan.prompt}”`
+                )}
+              </p>
             </div>
           )}
 
@@ -193,22 +237,76 @@ export default function PreparationSetup({ js, goos, onGoos, stale, cursorPath, 
               <p className="mt-1 text-[10px] text-muted-foreground/70">
                 Nothing above is run from here. These say what would be probed on the machine.
               </p>
+              {onAdd && adding !== "check" && (
+                <Button type="button" size="xs" variant="outline" className="mt-1.5" onClick={() => setAdding("check")}>
+                  <Plus className="size-3" aria-hidden />
+                  Add a check
+                </Button>
+              )}
+              {adding === "check" && (
+                <div className="mt-1.5">
+                  <PreparationAddForm
+                    mode="check"
+                    goos={goos}
+                    existingIds={takenIds}
+                    onCancel={() => setAdding(null)}
+                    onAdd={(item) => {
+                      onAdd("precheck", item);
+                      setAdding(null);
+                    }}
+                  />
+                </div>
+              )}
             </section>
           )}
 
-          {plan.phases.map((phase) => (
-            <section key={phase.id}>
-              <h4 className="mb-1 flex items-baseline gap-2 text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
-                {phase.label}
-                <span className="text-[10px] font-normal tracking-normal normal-case">{phase.note}</span>
-              </h4>
-              <div className="space-y-1.5">
-                {phase.steps.map((s) => (
-                  <PreparationStepCard key={s.path} step={s} onJump={onJump} cursorPath={cursorPath} />
-                ))}
-              </div>
-            </section>
-          ))}
+          {/*
+            An empty phase still draws its heading while editing, so "add the
+            first step to Configure" has somewhere to hang. With editing off it
+            stays hidden — an empty heading is noise to a reader.
+          */}
+          {plan.phases
+            .filter((phase) => phase.steps.length || onAdd)
+            .map((phase) => (
+              <section key={phase.id}>
+                <h4 className="mb-1 flex items-baseline gap-2 text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+                  {phase.label}
+                  <span className="text-[10px] font-normal tracking-normal normal-case">{phase.note}</span>
+                </h4>
+                <div className="space-y-1.5">
+                  {phase.steps.map((s) => (
+                    <PreparationStepCard key={s.path} step={s} onJump={onJump} cursorPath={cursorPath} />
+                  ))}
+                </div>
+                {onAdd && adding !== phase.id && (
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    className="mt-1.5"
+                    onClick={() => setAdding(phase.id)}
+                  >
+                    <Plus className="size-3" aria-hidden />
+                    Add a step to {phase.label}
+                  </Button>
+                )}
+                {adding === phase.id && (
+                  <div className="mt-1.5">
+                    <PreparationAddForm
+                      mode="step"
+                      phase={phase.id}
+                      goos={goos}
+                      existingIds={takenIds}
+                      onCancel={() => setAdding(null)}
+                      onAdd={(item, target) => {
+                        onAdd(`preconfigure.${target}`, item);
+                        setAdding(null);
+                      }}
+                    />
+                  </div>
+                )}
+              </section>
+            ))}
 
           {plan.verify.length > 0 && (
             <section>

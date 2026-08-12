@@ -31,9 +31,20 @@ import { lintPreparation } from "@/components/agents-v2/utils/preparation/lint";
 import {
   appendItem,
   removeAt,
+  renderFragment,
   replaceScalar,
   setScalar,
 } from "@/components/agents-v2/utils/preparation/yamlSplice";
+import { scopeOf, scopeSentence } from "@/components/agents-v2/utils/preparation/scope";
+import { repairFor, NO_AUTOMATIC_FIX } from "@/components/agents-v2/utils/preparation/repairs";
+import { editableAt, applyEdit } from "@/components/agents-v2/utils/preparation/edit";
+import {
+  CHECK_RECIPES,
+  STEP_RECIPES,
+  buildCheck,
+  buildStep,
+  platformKeyFor,
+} from "@/data/preparationForms";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIX = join(HERE, "fixtures", "preparation");
@@ -668,5 +679,251 @@ describe("splice fuzz over the whole corpus", () => {
   it("refuses an anchored scalar rather than rewriting every alias of it", () => {
     const t = "a: &shared hello\nb: *shared\n";
     expect(replaceScalar(t, parsePreparation(t).doc, ["a"], "other")).toBeNull();
+  });
+});
+
+// ─── Scope: which machines an edit reaches ────────────────────────────────────
+
+describe("scopeOf", () => {
+  it("is not shared when the key names one machine", () => {
+    const s = scopeOf({ platforms: { darwin: {} } }, "darwin", "darwin");
+    expect(s).toMatchObject({ kind: "exact", shared: false, others: [] });
+  });
+
+  it("is shared, and names the others, when the key is `all`", () => {
+    const s = scopeOf({ platforms: { all: {} } }, "all", "darwin");
+    expect(s.shared).toBe(true);
+    expect(s.others.sort()).toEqual(["linux", "windows"]);
+    expect(scopeSentence(s, "darwin")).toBe("Shared — Linux and Windows run this too.");
+  });
+
+  it("excludes a machine that has a key of its own, because specific overrides all", () => {
+    // Editing the `all` body cannot reach Windows here — Windows has its own.
+    const s = scopeOf({ platforms: { all: {}, windows: {} } }, "all", "darwin");
+    expect(s.others).toEqual(["linux"]);
+    expect(scopeSentence(s, "darwin")).toBe("Shared — Linux runs this too.");
+  });
+
+  it("handles a comma-list", () => {
+    const s = scopeOf({ platforms: { "darwin,linux": {} } }, "darwin,linux", "linux");
+    expect(s.kind).toBe("comma");
+    expect(s.others).toEqual(["darwin"]);
+  });
+
+  it("says so when nothing is written for this machine", () => {
+    const s = scopeOf({ platforms: { windows: {} } }, null, "darwin");
+    expect(s.kind).toBe("none");
+    expect(scopeSentence(s, "darwin")).toBe("Nothing written for macOS.");
+  });
+
+  it("writes to the key the resolver matched, never to the tab", () => {
+    // The rule, stated as a test: the target is scope.key.
+    const node = { platforms: { all: { check: { kind: "binary", value: "git" } } } };
+    const hit = resolveCheck(node, "windows");
+    expect(scopeOf(node, hit.key, "windows").key).toBe("all");
+  });
+});
+
+// ─── The add-form recipes ─────────────────────────────────────────────────────
+
+describe("add-form recipes", () => {
+  /**
+   * The guard against the failure this repo already had: five hand-written
+   * preparation literals, every one of them invalid. A recipe that ships a
+   * document the validator rejects is the same bug with a nicer wrapper.
+   */
+  it.each(CHECK_RECIPES.map((r) => [r.title, r]))("check recipe %s is valid", (_t, r) => {
+    const sample = r.ask.placeholder;
+    const item = buildCheck({
+      id: "probe",
+      label: r.label(sample),
+      check: r.build(sample, r.extra?.placeholder),
+      platformKey: "all",
+    });
+    const js = { schema: 1, preparation: { precheck: [item] } };
+    expect(lintPreparation(js).filter((p) => p.severity === "error")).toEqual([]);
+  });
+
+  it.each(STEP_RECIPES.map((r) => [r.title, r]))("step recipe %s is valid", (_t, r) => {
+    const sample = r.ask.placeholder;
+    const built = r.build(sample, r.extra?.placeholder, "darwin");
+    const item = buildStep({
+      id: "doit",
+      label: r.label(sample),
+      ways: built.ways,
+      lastResort: built.lastResort ?? "Do it by hand, then run preparation again.",
+      platformKey: "all",
+    });
+    const js = { schema: 1, preparation: { preconfigure: { [r.phase]: [item] } } };
+    expect(lintPreparation(js).filter((p) => p.severity === "error")).toEqual([]);
+  });
+
+  /** The whole point of the locked zone. */
+  it("every step ends in an option that requires nothing", () => {
+    for (const r of STEP_RECIPES) {
+      const built = r.build(r.ask.placeholder, r.extra?.placeholder, "linux");
+      const item = buildStep({
+        id: "x",
+        label: "X",
+        ways: built.ways,
+        lastResort: built.lastResort ?? "Do it by hand.",
+        platformKey: "all",
+      });
+      expect(item.platforms.all.strategies.at(-1).requires ?? []).toEqual([]);
+    }
+  });
+
+  it("cannot produce a dead end even from a ladder of conditional ways", () => {
+    // buildStep appends the last resort itself, so a caller supplying only
+    // conditional strategies still cannot create the failure.
+    const item = buildStep({
+      id: "x",
+      label: "X",
+      ways: [
+        { id: "winget", requires: ["winget"], argv: ["winget", "install", "x"] },
+        { id: "choco", requires: ["choco"], argv: ["choco", "install", "x"] },
+      ],
+      lastResort: "Install it by hand.",
+      platformKey: "windows",
+    });
+    const js = { schema: 1, preparation: { preconfigure: { commands: [item] } } };
+    expect(lintPreparation(js).filter((p) => p.rule === "terminal-strategy-requires")).toEqual([]);
+  });
+
+  it("writes `all` when every machine is picked, rather than three identical keys", () => {
+    expect(platformKeyFor([])).toBe("all");
+    expect(platformKeyFor(["darwin", "linux", "windows"])).toBe("all");
+    expect(platformKeyFor(["linux", "darwin"])).toBe("darwin,linux");
+    expect(platformKeyFor(["windows"])).toBe("windows");
+  });
+
+  it("renders to YAML that parses back to what was built", () => {
+    const item = buildCheck({
+      id: "git",
+      label: "git installed",
+      check: { kind: "binary", value: "git" },
+      platformKey: "all",
+    });
+    const body = renderFragment([item], "\n")
+      .split("\n")
+      .map((l) => "    " + l)
+      .join("\n");
+    const back = parsePreparation(`schema: 1\npreparation:\n  precheck:\n${body}\n`);
+    expect(back.fatal).toBeNull();
+    expect(back.js.preparation.precheck[0]).toEqual(item);
+  });
+});
+
+// ─── Repairs ──────────────────────────────────────────────────────────────────
+
+describe("repairFor", () => {
+  const ctxOf = (text) => {
+    const { doc, js } = parsePreparation(text);
+    return { doc, js, text, problems: lintPreparation(js) };
+  };
+
+  it("adds a manual last resort to a dead-ended ladder, and that fixes it", () => {
+    const ctx = ctxOf(read("invalid", "terminal-strategy-requires.yaml"));
+    const p = ctx.problems.find((x) => x.rule === "terminal-strategy-requires");
+    const repair = repairFor(p, ctx.text, ctx.doc, ctx.js);
+    expect(repair.label).toBe("Add a manual last resort");
+
+    const next = repair.apply();
+    expect(next).toBeTruthy();
+    const after = parsePreparation(next.text);
+    expect(after.fatal).toBeNull();
+    expect(lintPreparation(after.js).filter((x) => x.rule === "terminal-strategy-requires")).toEqual([]);
+
+    const ladder = after.js.preparation.preconfigure.commands[0].platforms.windows.strategies;
+    expect(ladder.at(-1).requires ?? []).toEqual([]);
+    expect(ladder.at(-1).actions[0].kind).toBe("instructions");
+  });
+
+  it("never offers to drop `requires` from a conditional strategy", () => {
+    // That would make the editor complicit in running winget without winget.
+    const ctx = ctxOf(read("invalid", "terminal-strategy-requires.yaml"));
+    const p = ctx.problems.find((x) => x.rule === "terminal-strategy-requires");
+    expect(repairFor(p, ctx.text, ctx.doc, ctx.js).label).not.toMatch(/remove|drop/i);
+  });
+
+  it("sets a wrong schema version", () => {
+    const ctx = ctxOf(read("invalid", "unsupported-schema.yaml"));
+    const p = ctx.problems.find((x) => x.rule === "schema-not-1");
+    const next = repairFor(p, ctx.text, ctx.doc, ctx.js).apply();
+    expect(parsePreparation(next.text).js.schema).toBe(1);
+  });
+
+  it("offers nothing for the rules where a guess would be wrong", () => {
+    const t = "a: 1\n";
+    for (const rule of NO_AUTOMATIC_FIX) {
+      expect(repairFor({ rule, path: "a", message: "" }, t, parsePreparation(t).doc, {})).toBeNull();
+    }
+  });
+
+  it("every offered repair leaves a document that still parses", () => {
+    for (const f of invalid) {
+      const ctx = ctxOf(read("invalid", f));
+      for (const p of ctx.problems) {
+        const repair = repairFor(p, ctx.text, ctx.doc, ctx.js);
+        const next = repair?.apply?.();
+        if (!next) continue;
+        const after = parsePreparation(next.text);
+        expect(after.fatal, `${f} / ${p.rule}`).toBeNull();
+        expect(after.errors, `${f} / ${p.rule}`).toEqual([]);
+      }
+    }
+  });
+});
+
+// ─── The edit gateway ─────────────────────────────────────────────────────────
+
+const FOLDED = [
+  "preparation", "preconfigure", "commands", 0,
+  "platforms", "windows", "strategies", 2, "actions", 0, "message",
+];
+
+describe("editableAt", () => {
+  it("refuses a folded block with a reason and a line to go to", () => {
+    const t = read("valid", "aws-multi-os.yaml");
+    const gate = editableAt(t, parsePreparation(t).doc, FOLDED);
+    expect(gate.ok).toBe(false);
+    expect(gate.reason).toBe("block-scalar");
+    expect(gate.why).toMatch(/re-wrap/);
+    expect(gate.line).toBeGreaterThan(0);
+  });
+
+  it("allows a plain scalar", () => {
+    const t = "preparation:\n  prompt: Set up now?\n";
+    expect(editableAt(t, parsePreparation(t).doc, ["preparation", "prompt"]).ok).toBe(true);
+  });
+
+  it("treats an absent key as writable, because that is an insert", () => {
+    const t = "preparation:\n  precheck: []\n";
+    expect(editableAt(t, parsePreparation(t).doc, ["preparation", "prompt"]).ok).toBe(true);
+  });
+});
+
+describe("applyEdit", () => {
+  it("writes the value and keeps the previous text for undo", () => {
+    const t = "preparation:\n  prompt: Old\n";
+    const r = applyEdit(t, parsePreparation(t).doc, ["preparation", "prompt"], "New");
+    expect(r.ok).toBe(true);
+    expect(parsePreparation(r.text).js.preparation.prompt).toBe("New");
+    expect(r.before).toBe(t);
+  });
+
+  it("refuses rather than saving a document that would not parse", () => {
+    // The guard that matters most: a splice bug must never be written over the
+    // file the user had.
+    const t = read("valid", "aws-multi-os.yaml");
+    expect(applyEdit(t, parsePreparation(t).doc, FOLDED, "short").ok).toBe(false);
+  });
+
+  it("keeps every comment when editing the biggest real document", () => {
+    const t = read("authored", "aws-environment-setup.yaml");
+    const r = applyEdit(t, parsePreparation(t).doc, ["preparation", "prompt"], "Set this machine up?");
+    expect(r.ok).toBe(true);
+    const comments = (s) => s.split(/\r?\n/).filter((l) => l.trim().startsWith("#"));
+    expect(comments(r.text)).toEqual(comments(t));
   });
 });

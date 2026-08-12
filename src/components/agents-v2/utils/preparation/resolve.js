@@ -228,7 +228,7 @@ export function planFor(js, goos) {
         path: `preparation.preconfigure.${phase.id}[${i}]`,
       };
     }),
-  })).filter((p) => p.steps.length);
+  }));
 
   const verify = asArray(prep.verify).map((v, i) => {
     const hit = resolveCheck(v, goos);
@@ -243,6 +243,9 @@ export function planFor(js, goos) {
     };
   });
 
+  // Empty phases are KEPT. They were filtered out here, which left "add the
+  // first step to Configure" with nowhere to hang; whether to draw an empty
+  // heading is the view's call, not the resolver's.
   const steps = phases.flatMap((p) => p.steps);
   const all = [...prechecks, ...steps, ...verify];
 
