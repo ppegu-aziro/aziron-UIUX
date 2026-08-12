@@ -337,9 +337,10 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
             >
               <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
                 {/*
-                  "Files", not "Folder": the column beside it is headed with a
-                  file path, so this one should name what it holds rather than
-                  the shape of the container holding it.
+                  "Explorer", not "Folder": the column beside it is headed with
+                  a file path, so this one should name the panel rather than the
+                  shape of the container behind it. It is also what every editor
+                  the audience already uses calls this exact panel.
 
                   The count is the part that earns its place on a phone — with
                   the tree closed it is the only thing telling you there is
@@ -359,7 +360,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
                   ) : (
                     <ChevronRight className="size-3 shrink-0 text-muted-foreground lg:hidden" aria-hidden />
                   )}
-                  <span className="text-[11px] font-medium text-muted-foreground">Files</span>
+                  <span className="text-[11px] font-medium text-muted-foreground">Explorer</span>
                   <span className="font-mono text-[11px] text-muted-foreground/60">
                     {agent.files.length}
                   </span>
@@ -370,7 +371,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
                   variant="ghost"
                   size="icon-sm"
                   className="hidden lg:inline-flex"
-                  aria-label={focus === "folder" ? "Restore layout" : "Focus the file list"}
+                  aria-label={focus === "folder" ? "Restore layout" : "Focus the explorer"}
                   aria-pressed={focus === "folder"}
                   onClick={() => setFocus(focus === "folder" ? null : "folder")}
                 >
@@ -411,7 +412,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
             </div>
             {focus === null && (
               <Resizer
-                label="Resize the file list"
+                label="Resize the explorer"
                 onDrag={(dx) => setFolderW((w) => Math.min(420, Math.max(150, w + dx)))}
               />
             )}
