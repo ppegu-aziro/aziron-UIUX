@@ -23,11 +23,16 @@ import { suggestJson } from "./utils/agentJsonSuggest";
  * show you the value would defeat the point of the vault.
  */
 /**
- * One rendered row, measured rather than derived from the padding — the mono
- * face sets its own line box. Used to decide above-or-below before paint, so
- * the list never appears in one place and jumps to another.
+ * The popup's own geometry, needed before it renders so it can be placed once
+ * rather than appearing and then jumping.
+ *
+ * ROW_H is one `[role=option]`: 16px line box plus 3px of padding either side.
+ * CHROME is the list's own padding and border. Both verified against the
+ * rendered element — deriving the row height from the container's total was
+ * what made the earlier estimate four pixels tall per row.
  */
-const ROW_H = 26;
+const ROW_H = 22;
+const CHROME = 8;
 const MAX_ROWS = 8;
 const MAX_W = 260;
 
@@ -74,14 +79,19 @@ function place(el, value, start, count) {
   const padT = parseFloat(cs.paddingTop) || 0;
 
   const lineTop = el.offsetTop + padT + line * lh - el.scrollTop;
-  const height = Math.min(count, MAX_ROWS) * ROW_H + 6;
+  const height = Math.min(count, MAX_ROWS) * ROW_H + CHROME;
 
-  // Below by default; above when that would run past the bottom and there is
-  // room up there. Never both, and never off the top.
+  // Below the caret line by default, above it when that would run off the
+  // bottom and there is room up there.
   const below = lineTop + lh + 2;
   const above = lineTop - height - 2;
-  const overflows = below + height > el.clientHeight;
-  const top = overflows && above >= 0 ? above : Math.min(below, Math.max(0, el.clientHeight - height));
+  const wanted = below + height > el.clientHeight && above >= 0 ? above : below;
+
+  // Then clamped into the pane regardless. Both branches above are relative to
+  // the caret's position in the DOCUMENT, and a caret the editor has not
+  // scrolled to is off-screen — which is how the list ended up floating below
+  // the last visible line, anchored to something the reader could not see.
+  const top = Math.max(0, Math.min(wanted, el.clientHeight - height));
 
   const x = el.offsetLeft + padL + col * charWidth(cs) - el.scrollLeft;
   const left = Math.max(4, Math.min(x, el.clientWidth - MAX_W - 8));

@@ -133,7 +133,7 @@ function Chips({ spec, value, options, open, onChange }) {
             }}
             placeholder="Add one not in the list"
             aria-label={`Add to ${spec.label}`}
-            className="h-7 flex-1 text-xs"
+            className="h-7 flex-1 text-xs md:text-xs"
           />
         </div>
       )}
@@ -181,7 +181,7 @@ function PromptList({ value, onChange }) {
           onChange={(e) => setLabel(e.target.value)}
           placeholder="Label"
           aria-label="Quick prompt label"
-          className="h-7 text-xs sm:w-32"
+          className="h-7 text-xs sm:w-32 md:text-xs"
         />
         <Input
           value={prompt}
@@ -189,7 +189,7 @@ function PromptList({ value, onChange }) {
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="The prompt this button sends"
           aria-label="Quick prompt text"
-          className="h-7 flex-1 text-xs"
+          className="h-7 flex-1 text-xs md:text-xs"
         />
         <Button type="button" size="xs" onClick={add} disabled={!label.trim() || !prompt.trim()}>
           <Plus className="size-3" aria-hidden />

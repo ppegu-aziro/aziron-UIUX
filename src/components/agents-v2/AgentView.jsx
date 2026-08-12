@@ -544,7 +544,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
                     value={content}
                     onChange={(e) => writeFile(e.target.value)}
                     placeholder={isEntry ? SCAFFOLD : undefined}
-                    className="min-h-0 flex-1 resize-none overflow-y-auto rounded-none border-0 bg-transparent font-mono text-[11px] leading-5 focus-visible:ring-0"
+                    className="min-h-0 flex-1 resize-none overflow-y-auto rounded-none border-0 bg-transparent font-mono text-[11px] leading-5 focus-visible:ring-0 md:text-[11px]"
                   />
                   <EditorSuggest
                     textareaRef={textareaRef}

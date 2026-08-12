@@ -32,7 +32,8 @@ import { useAgentsV2 } from "@/context/AgentsV2Context";
  */
 
 const KEY = "w-[86px] shrink-0 pt-1.5 font-mono text-[11px] text-muted-foreground";
-const FIELD = "h-7 border-0 bg-transparent px-1.5 font-mono text-[11px] shadow-none focus-visible:bg-background focus-visible:ring-1";
+const FIELD =
+  "h-7 border-0 bg-transparent px-1.5 font-mono text-[11px] shadow-none focus-visible:bg-background focus-visible:ring-1 md:text-[11px]";
 
 export default function FrontmatterEditor({ agent }) {
   const { patch, setTargets } = useAgentsV2();
@@ -71,7 +72,7 @@ export default function FrontmatterEditor({ agent }) {
             placeholder="what it does — shown in the catalog and used to decide when it is relevant"
             aria-label="description"
             className={cn(
-              "min-h-0 flex-1 resize-y border-0 bg-transparent px-1.5 py-1 font-mono text-[11px] leading-5 shadow-none focus-visible:bg-background focus-visible:ring-1",
+              "min-h-0 flex-1 resize-y border-0 bg-transparent px-1.5 py-1 font-mono text-[11px] leading-5 shadow-none focus-visible:bg-background focus-visible:ring-1 md:text-[11px]",
             )}
           />
         </div>

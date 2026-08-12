@@ -266,7 +266,7 @@ export default function AgentJsonView({
               value={text}
               spellCheck={false}
               onChange={(e) => onChangeText(e.target.value)}
-              className="min-h-0 flex-1 resize-none overflow-y-auto rounded-none border-0 bg-transparent font-mono text-[11px] leading-5 focus-visible:ring-0"
+              className="min-h-0 flex-1 resize-none overflow-y-auto rounded-none border-0 bg-transparent font-mono text-[11px] leading-5 focus-visible:ring-0 md:text-[11px]"
             />
             <EditorSuggest
               mode="json"
