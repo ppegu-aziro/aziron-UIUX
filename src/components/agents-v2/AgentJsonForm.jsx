@@ -9,7 +9,7 @@ import { Section } from "./utils/formControls";
 import SchemaField from "./SchemaField";
 
 /**
- * The interactive half of AGENT.json.
+ * The interactive half of the agent's configuration file.
  *
  * Generated from the schema, with no per-field code — which is the whole point.
  * A hand-written form beside a schema-driven validator is how a product ends up
@@ -135,7 +135,7 @@ export default function AgentJsonForm({ agent, onlyChanged, onShowAll, onEdit, o
       {onlyChanged && !anyVisible && (
         <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center">
           <p className="text-xs text-muted-foreground">
-            Nothing has been changed from its defaults, so AGENT.json is nearly empty.
+            Nothing has been changed from its defaults, so this file is nearly empty.
           </p>
           <Button type="button" size="xs" variant="outline" className="mt-2" onClick={onShowAll}>
             Show every setting

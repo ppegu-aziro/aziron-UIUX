@@ -175,9 +175,18 @@ export function AgentsV2Provider({ children }) {
    * place reads as a broken tree rather than a refusal, so each one refuses.
    */
   const refuseReserved = (path, verb) => {
-    if (path !== AGENT_JSON_PATH) return false;
-    toast.error(`AGENT.json is generated from this agent's settings and cannot be ${verb}.`);
-    return true;
+    if (path === AGENT_JSON_PATH) {
+      toast.error(`${AGENT_JSON_PATH} is generated from this agent's settings and cannot be ${verb}.`);
+      return true;
+    }
+    // The folder it lives in, too. Removing `.aziron` would take the generated
+    // file out of the tree while the projection put it straight back, which
+    // reads as an operation that did not work rather than one that was refused.
+    if (AGENT_JSON_PATH.startsWith(`${path}/`)) {
+      toast.error(`${path}/ holds this agent's generated settings and cannot be ${verb}.`);
+      return true;
+    }
+    return false;
   };
 
   const api = useMemo(

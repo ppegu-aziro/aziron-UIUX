@@ -58,6 +58,7 @@ function buildTree(files, folders) {
       path: file.path,
       dir: false,
       generated: Boolean(file.generated),
+      locked: Boolean(file.generated),
       children: new Map(),
     });
   });
@@ -68,6 +69,11 @@ function buildTree(files, folders) {
     );
     kids.forEach(sort);
     node.list = kids;
+    // A folder holding a generated file inherits its lock. Deleting `.aziron`
+    // would otherwise be offered, ask for confirmation, and only then be
+    // refused — a sequence that asks the user to commit to something the
+    // product was never going to do.
+    if (node.dir) node.locked = kids.some((k) => k.locked);
     return node;
   };
 
@@ -107,8 +113,9 @@ const MENU = [
   { id: "delete", label: "Delete", icon: Trash2, danger: true, real: true },
 ];
 
-/** Why the four structural operations are unavailable on a generated file. */
-const GENERATED_REASON = "generated from settings";
+/** Why the four structural operations are unavailable. */
+const LOCKED_REASON = (node) =>
+  node.dir ? "holds generated settings" : "generated from settings";
 
 const ROW =
   "group flex items-center gap-1.5 rounded-md py-1 pr-2 text-[11px] transition-colors select-none";
@@ -230,7 +237,7 @@ function Node({
         aria-selected={active === node.path}
         aria-expanded={node.dir ? isOpen : undefined}
         tabIndex={0}
-        draggable={!node.generated}
+        draggable={!node.locked}
         onDragStart={(e) => {
           e.stopPropagation();
           e.dataTransfer.setData("text/plain", node.path);
@@ -254,7 +261,7 @@ function Node({
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             node.dir ? toggle(node.path) : onSelect(node.path);
-          } else if (e.key === "F2" && !node.generated) {
+          } else if (e.key === "F2" && !node.locked) {
             e.preventDefault();
             startEdit({ kind: "rename", path: node.path });
           }
@@ -467,7 +474,12 @@ export default function FileTree({
 
         {onCreateSuggested &&
           SUGGESTED.filter(
-            (sug) => !files.some((f) => f.path.startsWith(`${sug.dir}/`)) && !folders.includes(sug.dir),
+            (sug) =>
+              // Generated files do not count as having filled a folder in.
+              // `.aziron/` now always holds one, and without this the row that
+              // offers a preparation document would never appear again.
+              !files.some((f) => !f.generated && f.path.startsWith(`${sug.dir}/`)) &&
+              !folders.includes(sug.dir),
           ).map((sug) => (
             <button
               key={sug.dir}
@@ -511,14 +523,14 @@ export default function FileTree({
               .map((m) => {
                 // Shown and disabled rather than hidden: an absent row reads as
                 // a bug, a greyed one with a reason reads as a rule.
-                const off = m.real && menu.node.generated;
+                const off = m.real && menu.node.locked;
                 return (
                   <button
                     key={m.id}
                     type="button"
                     role="menuitem"
                     disabled={off}
-                    title={off ? `AGENT.json is ${GENERATED_REASON}` : undefined}
+                    title={off ? `This ${menu.node.dir ? "folder" : "file"} ${LOCKED_REASON(menu.node)}` : undefined}
                     onClick={() => !off && handleMenu(m.id, menu.node)}
                     className={cn(
                       "flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors",
@@ -531,7 +543,7 @@ export default function FileTree({
                   >
                     <m.icon className="size-3 shrink-0" aria-hidden />
                     {m.label}
-                    {off && <span className="ml-auto text-[10px]">{GENERATED_REASON}</span>}
+                    {off && <span className="ml-auto text-[10px]">{LOCKED_REASON(menu.node)}</span>}
                   </button>
                 );
               })}

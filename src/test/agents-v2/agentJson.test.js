@@ -9,7 +9,7 @@
 import { describe, it, expect } from "vitest";
 
 import { AGENTS_V2 } from "@/data/agentsV2";
-import { FIELDS } from "@/data/agentJsonSchema";
+import { AGENT_JSON_PATH, FIELDS } from "@/data/agentJsonSchema";
 import {
   serialiseAgentJson,
   parseAgentJson,
@@ -50,6 +50,21 @@ const norm = (a) => ({
 
 const seeds = AGENTS_V2.map(norm);
 const ic = seeds.find((a) => a.id === "a-incident");
+
+// ─── Where the file lives ─────────────────────────────────────────────────────
+
+describe("AGENT_JSON_PATH", () => {
+  // AGENT.md is the agent as every host reads it; this file is Aziron's alone,
+  // so it belongs in Aziron's folder rather than beside the portable one.
+  it("is under .aziron/", () => {
+    expect(AGENT_JSON_PATH.startsWith(".aziron/")).toBe(true);
+  });
+
+  it("is not at the folder root", () => {
+    expect(AGENT_JSON_PATH).not.toBe("AGENT.json");
+    expect(AGENT_JSON_PATH.split("/").length).toBeGreaterThan(1);
+  });
+});
 
 // ─── Round-trip ───────────────────────────────────────────────────────────────
 

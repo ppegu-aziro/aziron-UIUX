@@ -4,14 +4,14 @@ import { AlertTriangle, Braces, Columns2, Info, ListFilter, SlidersHorizontal, W
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { fieldAt } from "@/data/agentJsonSchema";
+import { AGENT_JSON_PATH, fieldAt } from "@/data/agentJsonSchema";
 import { changedPaths, parseAgentJson, lineOfPath } from "./utils/agentJson";
 import { jsonContextAt } from "./utils/jsonPath";
 import AgentJsonForm from "./AgentJsonForm";
 import EditorSuggest from "./EditorSuggest";
 
 /**
- * AGENT.json, edited either way.
+ * The agent's configuration file, edited either way.
  *
  * Two renderings of one record, so the question "which one wins?" never arises:
  * the form patches the record and the JSON re-derives from it, and the JSON
@@ -36,7 +36,7 @@ import EditorSuggest from "./EditorSuggest";
  * "Form / Split / JSON" described the machinery: two of the three were words
  * about layout and none said what you would be looking at. "Settings" is the
  * thing a person came here to change, and "JSON" is safe to say because the
- * file is named AGENT.json one row above — the word is already on screen.
+ * file is named agent.json one row above — the word is already on screen.
  */
 const MODES = [
   { id: "form", label: "Settings", icon: SlidersHorizontal, hint: "Edit with controls" },
@@ -262,7 +262,7 @@ export default function AgentJsonView({
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
             <Textarea
               ref={ref}
-              aria-label="AGENT.json content"
+              aria-label={`${AGENT_JSON_PATH} content`}
               value={text}
               spellCheck={false}
               onChange={(e) => onChangeText(e.target.value)}
@@ -273,7 +273,7 @@ export default function AgentJsonView({
               agent={agent}
               textareaRef={ref}
               value={text}
-              currentPath="AGENT.json"
+              currentPath={AGENT_JSON_PATH}
               files={files}
               folders={folders}
               onInsert={onInsert}

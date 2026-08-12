@@ -21,6 +21,7 @@ import {
   TOOL_CATALOG,
   bumpVersion,
 } from "@/data/agentsV2";
+import { AGENT_JSON_PATH } from "@/data/agentJsonSchema";
 import { useAgentsV2 } from "@/context/AgentsV2Context";
 
 /* ── shared bits ─────────────────────────────────────────────────────────── */
@@ -351,12 +352,12 @@ export function ReleaseDialog({ agent, open, onOpenChange }) {
   /**
    * What actually ships, entrypoint first.
    *
-   * Read through the projection: AGENT.json is generated and therefore absent
+   * Read through the projection: the config file is generated and so absent
    * from the record, and this is the one screen that tells someone what a
    * release contains. Listing the folder without the file that configures it
    * would be a lie at exactly the moment it matters.
    */
-  const ENTRY_FIRST = { "AGENT.md": 0, "AGENT.json": 1 };
+  const ENTRY_FIRST = { "AGENT.md": 0, [AGENT_JSON_PATH]: 1 };
   const shipping = [...(agentFiles(agent?.id) ?? [])].sort(
     (a, b) => (ENTRY_FIRST[a.path] ?? 2) - (ENTRY_FIRST[b.path] ?? 2) || a.path.localeCompare(b.path),
   );
@@ -472,8 +473,9 @@ export function ReleaseDialog({ agent, open, onOpenChange }) {
             {/* The distinction the config file makes concrete: the package half
                 travels, the runtime half does not. */}
             <p className="mt-2 text-[10px] leading-4 text-muted-foreground">
-              AGENT.json ships with its <span className="text-foreground">package</span> settings only —
-              the model, credentials and retrieval stay on this workspace.
+              <code className="font-mono">.aziron/agent.json</code> carries the{" "}
+              <span className="text-foreground">package</span> settings only — the model, credentials
+              and retrieval stay on this workspace.
             </p>
           </div>
         </div>

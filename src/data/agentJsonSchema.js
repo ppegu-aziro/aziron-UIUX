@@ -31,7 +31,15 @@ import {
   VECTOR_DBS,
 } from "@/data/agentsV2";
 
-export const AGENT_JSON_PATH = "AGENT.json";
+/**
+ * Under `.aziron/`, not at the root.
+ *
+ * AGENT.md is the agent as every host reads it — Claude Code, Codex and Cursor
+ * all open it and none of them has ever heard of this file. The configuration
+ * here is Aziron's, so it belongs in Aziron's folder, beside the preparation
+ * document that is already there. Lowercase to match that neighbour.
+ */
+export const AGENT_JSON_PATH = ".aziron/agent.json";
 export const SCHEMA_ID = "aziron://schemas/agent.v1.json";
 
 /**
