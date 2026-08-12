@@ -59,6 +59,7 @@ export const SCHEMA_ID = "aziron://schemas/agent.v1.json";
  * @property {"string"|"number"|"boolean"|"enum"|"enumArray"|"objectArray"} type
  * @property {"text"|"textarea"|"select"|"slider"|"number"|"toggle"|"chips"|"prompt-list"} control
  * @property {"package"|"runtime"|"knowledge"|"chat"|"workspace"} section
+ * @property {string} group  Which menu entry it appears under. See GROUPS.
  * @property {"common"|"advanced"} tier
  * @property {"sm"|"md"|"lg"} [width]
  *   How much of the form grid this field asks for. A seven-option Select
@@ -98,6 +99,30 @@ export const SECTIONS = [
   { id: "chat", label: "Chat", note: "How this agent is offered in the composer.", travels: false },
   { id: "workspace", label: "Workspace", note: "Where it shows up for your team.", travels: false },
 ];
+
+/**
+ * How the FORM is navigated. Deliberately not the same list as SECTIONS.
+ *
+ * SECTIONS are the document's top-level keys, and they carry a promise —
+ * everything under `package` travels with a release, everything else stays
+ * here. That is a contract and it is not up for renaming.
+ *
+ * What a person looking for the tool allow-list wants is a heading that says
+ * "Tools", not to know it lives under `package`. So groups are named for what
+ * someone is looking for, and each maps onto exactly one section, which keeps
+ * the "does it travel?" badge honest without letting the file's shape dictate
+ * the menu.
+ */
+export const GROUPS = [
+  { id: "general", label: "General", section: "package", note: "What it is called, and how it is found." },
+  { id: "tools", label: "Tools", section: "package", note: "What it may call while it runs." },
+  { id: "model", label: "Model", section: "runtime", note: "How it thinks. Aziron only — a release uses its host's model." },
+  { id: "knowledge", label: "Knowledge hub", section: "knowledge", note: "What it answers from, beyond its own files." },
+  { id: "chat", label: "Chat", section: "chat", note: "How it is offered above the composer." },
+  { id: "workspace", label: "Workspace", section: "workspace", note: "Where it shows up for your team." },
+];
+
+const SECTION_BY_GROUP = Object.fromEntries(GROUPS.map((g) => [g.id, g.section]));
 
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const strArray = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : null);
@@ -141,6 +166,7 @@ export const FIELDS = [
   /* ── package ───────────────────────────────────────────────────────────── */
   {
     path: "package.name",
+    group: "general",
     width: "md",
     label: "Name",
     hint: "What this agent is called, in the catalog and in the install command.",
@@ -157,6 +183,7 @@ export const FIELDS = [
   },
   {
     path: "package.description",
+    group: "general",
     width: "md",
     label: "Description",
     hint: "What it does. Read by the catalog and used to decide when it is relevant.",
@@ -170,6 +197,7 @@ export const FIELDS = [
   },
   {
     path: "package.category",
+    group: "general",
     width: "sm",
     label: "Category",
     hint: "Groups it in the catalog. What v1 called a label.",
@@ -195,6 +223,7 @@ export const FIELDS = [
   },
   {
     path: "package.targets",
+    group: "general",
     width: "md",
     label: "Installs into",
     hint: "Which tools a release can be installed into. Empty means all of them.",
@@ -231,6 +260,7 @@ export const FIELDS = [
   },
   {
     path: "package.tools.posture",
+    group: "tools",
     width: "sm",
     label: "Tool access",
     hint: "none · scoped · open. Open means every tool available to whoever runs it.",
@@ -270,6 +300,7 @@ export const FIELDS = [
   },
   {
     path: "package.tools.granted",
+    group: "tools",
     width: "lg",
     label: "Granted tools",
     hint: "The explicit allow-list. Only these can be called.",
@@ -314,6 +345,7 @@ export const FIELDS = [
   },
   {
     path: "package.version",
+    group: "general",
     width: "sm",
     label: "Version",
     hint: "Set by releasing. A version you can type is a version that means nothing.",
@@ -330,6 +362,7 @@ export const FIELDS = [
   /* ── runtime ───────────────────────────────────────────────────────────── */
   {
     path: "runtime.provider",
+    group: "model",
     width: "md",
     label: "Provider",
     // The trap, stated where both surfaces read it: the record stores the
@@ -379,6 +412,7 @@ export const FIELDS = [
   },
   {
     path: "runtime.model",
+    group: "model",
     width: "md",
     label: "Model",
     hint: "Only models the chosen provider serves.",
@@ -421,6 +455,7 @@ export const FIELDS = [
   },
   {
     path: "runtime.apiToken",
+    group: "model",
     width: "md",
     label: "API token",
     hint: "The id of a saved credential — never the secret itself. Stays on the runtime.",
@@ -453,6 +488,7 @@ export const FIELDS = [
   },
   {
     path: "runtime.temperature",
+    group: "model",
     width: "sm",
     label: "Temperature",
     hint: "0 is repeatable, 1 is varied. Between 0 and 1.",
@@ -480,6 +516,7 @@ export const FIELDS = [
   },
   {
     path: "runtime.maxTokens",
+    group: "model",
     width: "sm",
     label: "Max tokens",
     hint: "The longest answer it may produce in one turn.",
@@ -497,6 +534,7 @@ export const FIELDS = [
   },
   {
     path: "runtime.maxIterations",
+    group: "model",
     width: "sm",
     label: "Max iterations",
     hint: "How many tool round-trips it may take before it must answer.",
@@ -516,6 +554,7 @@ export const FIELDS = [
   /* ── knowledge ─────────────────────────────────────────────────────────── */
   {
     path: "knowledge.sources",
+    group: "knowledge",
     width: "md",
     label: "Sources",
     hint: "What it answers from, by name. Anything not in the catalogue is kept as typed.",
@@ -533,6 +572,7 @@ export const FIELDS = [
   },
   {
     path: "knowledge.vectorDb",
+    group: "knowledge",
     width: "md",
     label: "Vector database",
     hint: "Which database retrieval searches. Empty means none.",
@@ -561,6 +601,7 @@ export const FIELDS = [
   },
   {
     path: "knowledge.collections",
+    group: "knowledge",
     width: "lg",
     label: "Collections",
     hint: "Narrows retrieval to part of the database.",
@@ -606,6 +647,7 @@ export const FIELDS = [
   },
   {
     path: "knowledge.ragMode",
+    group: "knowledge",
     width: "sm",
     label: "RAG mode",
     hint: "Retrieve before answering, and cite what was retrieved.",
@@ -627,6 +669,7 @@ export const FIELDS = [
   },
   {
     path: "knowledge.vectorSearch",
+    group: "knowledge",
     width: "sm",
     label: "Vector search",
     hint: "Semantic search across the selected collections.",
@@ -642,6 +685,7 @@ export const FIELDS = [
   /* ── chat ──────────────────────────────────────────────────────────────── */
   {
     path: "chat.quickPrompts",
+    group: "chat",
     width: "lg",
     label: "Quick prompts",
     hint: "Starter buttons above the composer. Each needs a label and a prompt.",
@@ -677,6 +721,7 @@ export const FIELDS = [
   /* ── workspace ─────────────────────────────────────────────────────────── */
   {
     path: "workspace.status",
+    group: "workspace",
     width: "sm",
     label: "Status",
     hint: "The dot in the catalog. active · idle · error · disabled.",
@@ -702,6 +747,7 @@ export const FIELDS = [
   },
   {
     path: "workspace.visibility",
+    group: "workspace",
     width: "sm",
     label: "Visibility",
     hint: "Public agents are installable by anyone in the org.",
@@ -738,6 +784,12 @@ export const fieldAt = (path) => BY_PATH.get(path) ?? null;
 
 /** Fields belonging to a section, in document order. */
 export const fieldsIn = (section) => FIELDS.filter((f) => f.section === section);
+
+/** Fields under a menu group, in document order. */
+export const fieldsInGroup = (group) => FIELDS.filter((f) => f.group === group);
+
+/** The section a group belongs to, so the travels badge stays truthful. */
+export const sectionOfGroup = (group) => SECTION_BY_GROUP[group] ?? null;
 
 /**
  * Property names legal directly under a dotted prefix.

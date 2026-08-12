@@ -240,10 +240,14 @@ export default function AgentJsonView({
       <Problems problems={shown.problems} onJump={jump} onFix={(fix) => onApplyPatch(fix.patch)} />
 
       <div className={cn("flex min-h-0 flex-1", showForm && showJson ? "flex-col lg:flex-row" : "flex-col")}>
+        {/*
+          No padding and no scroll on this wrapper — the form owns both now,
+          because its rail has to stay put while the settings beside it move.
+        */}
         {showForm && (
           <div
             className={cn(
-              "min-h-0 flex-1 overflow-y-auto p-3",
+              "flex min-h-0 flex-1 flex-col overflow-hidden",
               showJson && "lg:border-r lg:border-border",
             )}
           >

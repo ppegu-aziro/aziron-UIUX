@@ -9,10 +9,12 @@ import { Switch } from "@/components/ui/switch";
  * each other. They are presentational only — no store, no schema.
  */
 
-export function Section({ icon: Icon, title, note, children, muted, right, id }) {
+export function Section({ icon: Icon, title, note, children, muted, right, id, ...rest }) {
   return (
     <section
       id={id}
+      // Passes through data-* so a caller can mark it as a scroll target.
+      {...rest}
       className={cn(
         "rounded-xl border bg-card p-4",
         muted ? "border-dashed border-border" : "border-border",
