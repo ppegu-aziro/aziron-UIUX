@@ -28,6 +28,12 @@ import {
   strategiesOf,
 } from "@/components/agents-v2/utils/preparation/resolve";
 import { lintPreparation } from "@/components/agents-v2/utils/preparation/lint";
+import {
+  appendItem,
+  removeAt,
+  replaceScalar,
+  setScalar,
+} from "@/components/agents-v2/utils/preparation/yamlSplice";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIX = join(HERE, "fixtures", "preparation");
@@ -392,5 +398,275 @@ describe("plan verdict", () => {
 
   it("is empty when nothing is declared", () => {
     expect(planFor({ schema: 1, preparation: {} }, "linux").verdict).toBe("empty");
+  });
+});
+
+// ─── Writing: byte-range splices only ─────────────────────────────────────────
+
+describe("yamlSplice", () => {
+  const parse = (t) => parsePreparation(t).doc;
+
+  describe("replaceScalar", () => {
+    it("replaces the value and nothing else", () => {
+      const t = "preparation:\n  prompt: Set up now?\n  x: 1\n";
+      const r = replaceScalar(t, parse(t), ["preparation", "prompt"], "Ready to configure?");
+      expect(r.text).toBe("preparation:\n  prompt: Ready to configure?\n  x: 1\n");
+    });
+
+    it("keeps a trailing comment on the same line", () => {
+      // range[1] is the end of the VALUE; range[2] would swallow the comment.
+      const t = "preparation:\n  prompt: Set up now?   # asked once\n";
+      const r = replaceScalar(t, parse(t), ["preparation", "prompt"], "Now?");
+      expect(r.text).toContain("# asked once");
+      expect(r.text).toContain("prompt: Now?");
+    });
+
+    it("keeps single quotes on a regex, so backslashes are not doubled", () => {
+      // String.raw throughout: a plain "\d" in a JS literal is just "d", which
+      // would make this test pass while exercising no backslash at all.
+      const t = String.raw`a:
+  version_from: 'aws-cli/(\d+)'
+`;
+      const next = String.raw`docker/(\d+\.\d+)`;
+      const r = replaceScalar(t, parse(t), ["a", "version_from"], next);
+      expect(r.text).toBe(String.raw`a:
+  version_from: 'docker/(\d+\.\d+)'
+`);
+      // And it round-trips to the same string, backslashes intact.
+      expect(parsePreparation(r.text).js.a.version_from).toBe(next);
+    });
+
+    it("keeps a Windows path's backslashes", () => {
+      const t = String.raw`a:
+  path_hints: ['%ProgramFiles%\Amazon\AWSCLIV2']
+`;
+      const next = String.raw`%LOCALAPPDATA%\Programs\aws`;
+      const r = replaceScalar(t, parse(t), ["a", "path_hints", 0], next);
+      expect(parsePreparation(r.text).js.a.path_hints[0]).toBe(next);
+    });
+
+    it("quotes a value that would otherwise change meaning", () => {
+      // Asserted by ROUND-TRIP, not by which quote character came out. Which
+      // one yaml picks is its business; that the value survives is the promise,
+      // and pinning the character is how a test starts failing on a correct
+      // change.
+      const t = "a:\n  label: Plain\n";
+      for (const v of ["has: a colon", "true", "# not a comment", "  padded  ", "2.0.0", "-dash", "@reboot", "don't"]) {
+        const back = parsePreparation(replaceScalar(t, parse(t), ["a", "label"], v).text);
+        expect(back.fatal).toBeNull();
+        expect(back.js.a.label).toBe(v);
+      }
+    });
+
+    it("refuses a block scalar rather than reflowing it", () => {
+      // Rewriting a `>-` means re-indenting its lines, which is the one thing
+      // this module exists not to do.
+      const t = "a:\n  message: >-\n    Long text\n    over lines.\n";
+      expect(replaceScalar(t, parse(t), ["a", "message"], "short")).toBeNull();
+    });
+
+    it("preserves CRLF", () => {
+      const t = "a:\r\n  one: hello\r\n  two: 2\r\n";
+      const r = replaceScalar(t, parse(t), ["a", "one"], "goodbye");
+      expect(r.text).toBe("a:\r\n  one: goodbye\r\n  two: 2\r\n");
+      expect(r.text.split("\r\n")).toHaveLength(4);
+    });
+  });
+
+  describe("setScalar", () => {
+    it("inserts a missing key at the map's own indent", () => {
+      const t = "preparation:\n  precheck: []\n";
+      const r = setScalar(t, parse(t), ["preparation", "prompt"], "Set up now?");
+      expect(r.text).toBe("preparation:\n  precheck: []\n  prompt: Set up now?\n");
+    });
+
+    it("replaces when the key is already there", () => {
+      const t = "preparation:\n  prompt: old\n";
+      expect(setScalar(t, parse(t), ["preparation", "prompt"], "new").text)
+        .toBe("preparation:\n  prompt: new\n");
+    });
+  });
+
+  describe("appendItem", () => {
+    it("appends to a block sequence at the right indent", () => {
+      const t = "a:\n  strategies:\n    - id: winget\n    - id: choco\n";
+      const r = appendItem(t, parse(t), ["a", "strategies"], "id: manual");
+      expect(r.text).toBe("a:\n  strategies:\n    - id: winget\n    - id: choco\n    - id: manual\n");
+    });
+
+    it("re-parses to one more item", () => {
+      const t = "a:\n  strategies:\n    - id: winget\n";
+      const r = appendItem(t, parse(t), ["a", "strategies"], "id: manual\nactions:\n  - kind: instructions\n    message: Do it");
+      const js = parsePreparation(r.text).js;
+      expect(js.a.strategies).toHaveLength(2);
+      expect(js.a.strategies[1].id).toBe("manual");
+      expect(js.a.strategies[1].actions[0].kind).toBe("instructions");
+    });
+  });
+
+  describe("removeAt", () => {
+    it("takes the whole line, leaving no orphan indent", () => {
+      const t = "a:\n  one: 1\n  two: 2\n  three: 3\n";
+      expect(removeAt(t, parse(t), ["a", "two"]).text).toBe("a:\n  one: 1\n  three: 3\n");
+    });
+  });
+
+  /**
+   * The test this module exists for. The real documents are dense with
+   * hand-written rationale, and the contract's own README records that the
+   * PREVIOUS contract died of a tool silently discarding what it did not model.
+   */
+  describe("the real corpus survives an edit", () => {
+    it.each(authored)("authored/%s keeps every comment and its line endings", (f) => {
+      const t = read("authored", f);
+      const doc = parse(t);
+      const r = setScalar(t, doc, ["preparation", "prompt"], "Changed by a test");
+      expect(r).toBeTruthy();
+
+      const comments = (s) => s.split(/\r?\n/).filter((l) => l.trim().startsWith("#"));
+      expect(comments(r.text)).toEqual(comments(t));
+
+      // Line endings unchanged, and exactly one line differs.
+      expect((r.text.match(/\r\n/g) ?? []).length).toBe((t.match(/\r\n/g) ?? []).length);
+      const a = t.split(/\r?\n/);
+      const b = r.text.split(/\r?\n/);
+      expect(Math.abs(a.length - b.length)).toBeLessThanOrEqual(1);
+
+      // And it still parses, with only the prompt different.
+      const before = parsePreparation(t).js;
+      const after = parsePreparation(r.text).js;
+      expect(after.preparation.prompt).toBe("Changed by a test");
+      expect({ ...after.preparation, prompt: null }).toEqual({ ...before.preparation, prompt: null });
+    });
+
+    it.each(valid)("valid/%s keeps every comment", (f) => {
+      const t = read("valid", f);
+      const r = setScalar(t, parse(t), ["preparation", "prompt"], "Edited");
+      const comments = (s) => s.split(/\r?\n/).filter((l) => l.trim().startsWith("#"));
+      expect(comments(r.text)).toEqual(comments(t));
+      expect(parsePreparation(r.text).fatal).toBeNull();
+    });
+  });
+});
+
+/**
+ * The test that matters, and the one whose absence let three bugs ship.
+ *
+ * Every hand-written case above uses a top-level, single-line map — the shape
+ * where a wrong indent and a wrong newline are both invisible. This walks EVERY
+ * scalar and EVERY map in the real corpus instead, because half the maps in
+ * these files are sequence items and that is exactly where the arithmetic
+ * differs.
+ */
+describe("splice fuzz over the whole corpus", () => {
+  const corpus = [
+    ...valid.map((f) => [`valid/${f}`, read("valid", f)]),
+    ...authored.map((f) => [`authored/${f}`, read("authored", f)]),
+  ];
+
+  /** Every path in a document that points at a plain scalar, and at a map. */
+  const survey = (text) => {
+    const { doc } = parsePreparation(text);
+    const scalars = [];
+    const maps = [];
+    const walk = (node, path) => {
+      if (!node) return;
+      if (node.items) {
+        if (node.items[0]?.key !== undefined) {
+          maps.push(path);
+          for (const pair of node.items) {
+            if (pair?.key?.value === undefined) continue;
+            walk(pair.value, [...path, pair.key.value]);
+          }
+        } else {
+          node.items.forEach((item, i) => walk(item, [...path, i]));
+        }
+        return;
+      }
+      if (node.range && node.type && !/BLOCK/.test(node.type) && !node.anchor) scalars.push(path);
+    };
+    walk(doc.contents, []);
+    return { doc, scalars, maps };
+  };
+
+  it.each(corpus)("%s: replacing any scalar leaves a parseable document", (_name, text) => {
+    const { doc, scalars } = survey(text);
+    expect(scalars.length).toBeGreaterThan(4);
+    const broke = [];
+    for (const path of scalars) {
+      const r = replaceScalar(text, doc, path, "spliced-value");
+      if (!r) continue;
+      const after = parsePreparation(r.text);
+      if (after.fatal || after.errors.length) broke.push(docPathOf(path));
+    }
+    expect(broke).toEqual([]);
+  });
+
+  it.each(corpus)("%s: replacing any scalar changes exactly that one value", (_name, text) => {
+    const { doc, scalars } = survey(text);
+    const before = parsePreparation(text).js;
+    const wrong = [];
+    for (const path of scalars) {
+      const r = replaceScalar(text, doc, path, "spliced-value");
+      if (!r) continue;
+      const after = parsePreparation(r.text).js;
+      let node = after;
+      for (const seg of path.slice(0, -1)) node = node?.[seg];
+      if (node?.[path.at(-1)] !== "spliced-value") wrong.push(`${docPathOf(path)} not applied`);
+      // and nothing else moved
+      const strip = (o, p) => {
+        const c = structuredClone(o);
+        let n = c;
+        for (const seg of p.slice(0, -1)) n = n?.[seg];
+        if (n) n[p.at(-1)] = "•";
+        return c;
+      };
+      if (JSON.stringify(strip(after, path)) !== JSON.stringify(strip(before, path))) {
+        wrong.push(`${docPathOf(path)} changed something else`);
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+
+  it.each(corpus)("%s: inserting a key into any map leaves a parseable document", (_name, text) => {
+    // The 51% case. `- id: aws-cli` indents four but keys at six.
+    const { doc, maps } = survey(text);
+    expect(maps.length).toBeGreaterThan(5);
+    const broke = [];
+    for (const path of maps) {
+      const r = setScalar(text, doc, [...path, "spliced_key"], "v");
+      if (!r) { broke.push(`${docPathOf(path)} refused`); continue; }
+      const after = parsePreparation(r.text);
+      if (after.fatal || after.errors.length) broke.push(`${docPathOf(path)} → ${after.errors[0]?.message ?? after.fatal}`);
+    }
+    expect(broke).toEqual([]);
+  });
+
+  it.each(corpus)("%s: every splice preserves comments and line endings", (_name, text) => {
+    const { doc, scalars } = survey(text);
+    const comments = (s) => s.split(/\r?\n/).filter((l) => l.trim().startsWith("#"));
+    const crlf = (s) => (s.match(/\r\n/g) ?? []).length;
+    const damaged = [];
+    for (const path of scalars.slice(0, 40)) {
+      const r = replaceScalar(text, doc, path, "x");
+      if (!r) continue;
+      if (comments(r.text).length !== comments(text).length) damaged.push(`${docPathOf(path)} lost a comment`);
+      if (crlf(r.text) !== crlf(text)) damaged.push(`${docPathOf(path)} changed line endings`);
+    }
+    expect(damaged).toEqual([]);
+  });
+
+  it("preserves the author's quote style rather than normalising it", () => {
+    const text = read("valid", "sugar-and-comma-platforms.yaml");
+    const { doc } = parsePreparation(text);
+    const path = ["preparation", "precheck", 0, "platforms", "darwin,linux", "check", "argv", 1];
+    const r = replaceScalar(text, doc, path, "system info");
+    expect(r.text).toContain('"system info"');
+    expect(r.text).not.toContain("'system info'");
+  });
+
+  it("refuses an anchored scalar rather than rewriting every alias of it", () => {
+    const t = "a: &shared hello\nb: *shared\n";
+    expect(replaceScalar(t, parsePreparation(t).doc, ["a"], "other")).toBeNull();
   });
 });
