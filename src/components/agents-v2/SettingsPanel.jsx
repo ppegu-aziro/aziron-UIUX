@@ -132,7 +132,7 @@ export default function SettingsPanel({ agent, onOpenDialog }) {
         icon={Cpu}
         title="Model configuration"
         muted={!bound}
-        note="Applies only when this agent runs inside Aziron. None of it is included in a release — on Claude Code or Codex the host supplies the model."
+        note="Applies inside Aziron only. A released copy uses whatever model and tools its host provides."
       >
         {!bound ? (
           <div className="flex items-center justify-between gap-3">
@@ -444,8 +444,8 @@ export default function SettingsPanel({ agent, onOpenDialog }) {
       <Section icon={Sparkles} title="Summary" note="What this agent is, in the terms the new model uses.">
         <dl className="grid gap-x-6 gap-y-1.5 text-xs sm:grid-cols-2">
           {[
-            ["Runs here", agent.runtime ? `${agent.runtime.provider} · ${agent.runtime.model}` : "Not set up"],
-            ["Runs anywhere", agent.release ? `v${agent.release.version} · ${agent.targets.length} targets` : "Not released"],
+            ["Model", agent.runtime ? `${agent.runtime.provider} · ${agent.runtime.model}` : "Not set up"],
+            ["Release", agent.release ? `v${agent.release.version} · ${agent.targets.length} targets` : "Not released"],
             ["Tools", agent.tools === "scoped" ? `${agent.granted.length} granted` : TOOL_POSTURE[agent.tools].label],
             ["Knowledge", agent.knowledge.length ? `${agent.knowledge.length} sources` : "None"],
             ["Retrieval", [agent.ragMode && "RAG", agent.vectorSearch && "Vector search"].filter(Boolean).join(", ") || "Off"],

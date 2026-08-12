@@ -64,10 +64,10 @@ function Pick({ on, onClick, title, note, right, disabled }) {
 /* ── Model ───────────────────────────────────────────────────────────────── */
 
 /**
- * Binding a model is what fills the "runs here" half, so this dialog is the
- * one that visibly converts a former skill into something you can chat with.
- * It leads with Automatic because picking a specific model up front is the
- * decision users are least equipped to make.
+ * Picking a model is what makes an agent testable inside Aziron, so this
+ * dialog is the one that visibly converts a former skill into something you
+ * can talk to. It leads with Automatic because choosing a specific model up
+ * front is the decision users are least equipped to make.
  */
 export function ModelDialog({ agent, open, onOpenChange }) {
   const { setRuntime, clearRuntime } = useAgentsV2();
@@ -76,10 +76,10 @@ export function ModelDialog({ agent, open, onOpenChange }) {
   const save = () => {
     if (choice) {
       setRuntime(agent.id, choice);
-      toast.success(`${agent.name} runs here on ${choice.model}`);
+      toast.success(`${agent.name} now uses ${choice.model}`);
     } else {
       clearRuntime(agent.id);
-      toast.message(`${agent.name} no longer runs inside Aziron`);
+      toast.message(`${agent.name} has no model — it cannot be tried here`);
     }
     onOpenChange(false);
   };
@@ -90,11 +90,11 @@ export function ModelDialog({ agent, open, onOpenChange }) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Cpu className="size-4 text-muted-foreground" aria-hidden />
-            Runs here
+            Pick a model
           </DialogTitle>
           <DialogDescription>
-            Bind a model and this agent can be chatted with inside Aziron. It keeps running on every
-            target it is released to either way.
+            The model this agent thinks with inside Aziron. A released copy uses whatever model its
+            host provides, so this does not travel with it.
           </DialogDescription>
         </DialogHeader>
 

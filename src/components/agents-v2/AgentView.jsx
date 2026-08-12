@@ -25,7 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { useAgentsV2 } from "@/context/AgentsV2Context";
 import { KnowledgeDialog, ModelDialog, ReleaseDialog, ToolsDialog } from "./dialogs";
@@ -444,7 +444,13 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
         <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
           <SheetHeader>
-            <SheetTitle>Runs here — settings</SheetTitle>
+            <SheetTitle>Model &amp; tools</SheetTitle>
+            {/* The scope, stated rather than encoded in a label. This is the
+                thing "runs here" was trying and failing to say. */}
+            <SheetDescription>
+              How this agent thinks and what it can reach. Applies inside Aziron only — none of it is
+              included in a release.
+            </SheetDescription>
           </SheetHeader>
           <div className="px-4 pb-6">
             <SettingsPanel agent={agent} onOpenDialog={setDialog} />
@@ -455,7 +461,10 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
       <Sheet open={releasesOpen} onOpenChange={setReleasesOpen}>
         <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
           <SheetHeader>
-            <SheetTitle>Runs anywhere — releases</SheetTitle>
+            <SheetTitle>Releases</SheetTitle>
+            <SheetDescription>
+              Versions of this agent&apos;s folder, and where each one installs.
+            </SheetDescription>
           </SheetHeader>
           <div className="px-4 pb-6">
             <ReleasesPanel

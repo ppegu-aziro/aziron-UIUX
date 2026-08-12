@@ -6,6 +6,14 @@ import { TOOL_POSTURE } from "@/data/agentsV2";
 /**
  * The two halves, as one compact strip.
  *
+ * They used to be labelled "Runs here" and "Runs anywhere". Both asked the
+ * reader to infer a vantage point — here relative to what? — and "anywhere"
+ * overclaimed something that is in fact four named targets. Neither told you
+ * which settings lived behind which.
+ *
+ * So they are named for their contents: what the agent thinks with, and what
+ * gets shipped.
+ *
  * They were two bordered cards with their own headings and badge rows, which
  * cost roughly two hundred pixels of chrome above the file — on an authoring
  * screen, where the file is the thing. Worse, a card that large reads as a
@@ -64,7 +72,7 @@ export default function AgentHalvesBar({ agent, onSetup, onRelease, onSettings }
       ]
         .filter(Boolean)
         .join(" · ")
-    : "No model — set one up to try it";
+    : "Not set up — pick a model to try it";
 
   const anywhereSummary = anywhere
     ? `v${agent.release.version} · ${agent.targets.length} target${agent.targets.length === 1 ? "" : "s"}`
@@ -74,14 +82,14 @@ export default function AgentHalvesBar({ agent, onSetup, onRelease, onSettings }
     <div className="flex flex-wrap items-stretch gap-2">
       <Half
         icon={Cpu}
-        label="Runs here"
+        label="Model & tools"
         on={here}
         summary={hereSummary}
         onClick={here ? onSettings : onSetup}
       />
       <Half
         icon={Boxes}
-        label="Runs anywhere"
+        label="Release"
         on={anywhere}
         summary={anywhereSummary}
         onClick={onRelease}

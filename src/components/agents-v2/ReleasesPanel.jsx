@@ -62,8 +62,8 @@ export default function ReleasesPanel({ agent, onRelease }) {
         <Boxes className="mx-auto size-5 text-muted-foreground" aria-hidden />
         <p className="mt-2 text-sm font-medium text-foreground">No releases yet</p>
         <p className="mx-auto mt-1 max-w-xs text-xs leading-5 text-muted-foreground">
-          A release pins this folder at a version so it can be installed outside Aziron. Until then it
-          only runs here.
+          A release pins this folder at a version so it can be installed into Claude Code, Codex,
+          Copilot or Cursor. Until then it exists only in Aziron.
         </p>
         <Button type="button" size="sm" className="mt-3" onClick={onRelease}>
           <Rocket className="size-3.5" aria-hidden />
