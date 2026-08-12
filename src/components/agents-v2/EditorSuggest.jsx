@@ -23,16 +23,70 @@ import { suggestJson } from "./utils/agentJsonSuggest";
  * show you the value would defeat the point of the vault.
  */
 /**
- * Vertical position for the popup, under the line the token starts on.
- *
- * A textarea exposes no caret geometry, and mirroring it into a hidden div for
- * exact coordinates is a lot of machinery for an affordance that only needs to
- * be near the right place.
+ * One rendered row, measured rather than derived from the padding — the mono
+ * face sets its own line box. Used to decide above-or-below before paint, so
+ * the list never appears in one place and jumps to another.
  */
-function anchor(el, value, start) {
-  const line = String(value).slice(0, start).split("\n").length - 1;
-  const lh = parseFloat(getComputedStyle(el).lineHeight) || 16;
-  return Math.max(8, Math.min(line * lh + lh + 8 - el.scrollTop, el.clientHeight - 8));
+const ROW_H = 26;
+const MAX_ROWS = 8;
+const MAX_W = 260;
+
+/**
+ * Width of one character in the editor's font.
+ *
+ * The editor is monospaced, so a column number times this is an exact x — no
+ * hidden mirror div, no per-keystroke DOM measurement. Cached because the font
+ * only changes if the theme does.
+ */
+let fontKey = null;
+let charW = 0;
+function charWidth(cs) {
+  const font = cs.font || `${cs.fontSize} ${cs.fontFamily}`;
+  if (font !== fontKey) {
+    const canvas = (charWidth.canvas ??= document.createElement("canvas"));
+    const ctx = canvas.getContext("2d");
+    ctx.font = font;
+    // Ten characters, so rounding lands in the third decimal rather than the first.
+    charW = ctx.measureText("0000000000").width / 10 || 6.6;
+    fontKey = font;
+  }
+  return charW;
+}
+
+/**
+ * Where the popup goes: at the caret, and inside the pane.
+ *
+ * It used to sit at a fixed left edge one line below the caret, which put it
+ * under the wrong column on every line and let it run off the bottom of a short
+ * pane. Now it tracks the caret's column, and flips above the line when there
+ * is no room below — the behaviour every code editor has, and the reason you
+ * can keep reading the code you are completing against.
+ */
+function place(el, value, start, count) {
+  const upto = String(value).slice(0, start);
+  const rows = upto.split("\n");
+  const line = rows.length - 1;
+  const col = rows[rows.length - 1].length;
+
+  const cs = getComputedStyle(el);
+  const lh = parseFloat(cs.lineHeight) || 16;
+  const padL = parseFloat(cs.paddingLeft) || 0;
+  const padT = parseFloat(cs.paddingTop) || 0;
+
+  const lineTop = el.offsetTop + padT + line * lh - el.scrollTop;
+  const height = Math.min(count, MAX_ROWS) * ROW_H + 6;
+
+  // Below by default; above when that would run past the bottom and there is
+  // room up there. Never both, and never off the top.
+  const below = lineTop + lh + 2;
+  const above = lineTop - height - 2;
+  const overflows = below + height > el.clientHeight;
+  const top = overflows && above >= 0 ? above : Math.min(below, Math.max(0, el.clientHeight - height));
+
+  const x = el.offsetLeft + padL + col * charWidth(cs) - el.scrollLeft;
+  const left = Math.max(4, Math.min(x, el.clientWidth - MAX_W - 8));
+
+  return { top, left };
 }
 
 export default function EditorSuggest({
@@ -83,7 +137,7 @@ export default function EditorSuggest({
         quoted: hit.quoted,
         heading: hit.heading,
         items: hit.items,
-        top: anchor(el, value, hit.start),
+        pos: place(el, value, hit.start, hit.items.length),
         index: prev?.token === hit.token && prev?.kind === "json" ? (prev.index ?? 0) : 0,
       }));
       return;
@@ -113,7 +167,7 @@ export default function EditorSuggest({
     setState((prev) => ({
       ...found,
       items,
-      top: anchor(el, value, found.start),
+      pos: place(el, value, found.start, items.length),
       index: prev?.token === found.token ? (prev.index ?? 0) : 0,
     }));
   }, [textareaRef, value, currentPath, files, folders, mode, agent]);
@@ -188,28 +242,43 @@ export default function EditorSuggest({
   const isJson = state.kind === "json";
   const LABEL = { vault: "Vault variables", json: state.heading, path: "Path suggestions" };
 
+  /*
+    Deliberately small and see-through.
+
+    It had a heading row and a keyboard-hint footer, which for a single
+    suggestion meant two rows of furniture around one row of content, over a
+    solid background, three hundred pixels wide. What it covered was the code
+    you were completing against.
+
+    So: no heading — the icon says which kind of list this is and the line above
+    the caret already says which key you are filling in. No footer — ↑↓, Tab and
+    Esc are the same in every editor anyone has used, and a permanent legend is
+    a thing you read once and then look past. The note moves onto the item's own
+    line, greyed and right-aligned, the way VS Code shows detail.
+  */
   return (
     <div
       role="listbox"
       aria-label={LABEL[state.kind] ?? "Suggestions"}
-      style={{ top: state.top, left: 12 }}
-      className="absolute z-30 max-h-56 w-80 overflow-y-auto rounded-lg border border-border bg-popover py-1 shadow-lg"
+      style={{
+        top: state.pos.top,
+        left: state.pos.left,
+        maxWidth: MAX_W,
+        maxHeight: MAX_ROWS * ROW_H + 6,
+      }}
+      className="absolute z-30 w-max min-w-[150px] overflow-x-hidden overflow-y-auto rounded-md border border-border/70 bg-popover/85 py-[3px] shadow-md ring-1 ring-black/5 backdrop-blur-sm"
     >
-      {(isVault || isJson) && (
-        <p className="px-2.5 pb-1 text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
-          {isVault ? "Vault variables" : state.heading}
-        </p>
-      )}
-
       {state.items.map((item, i) => {
         // Vault and path entries are keyed by `name`, schema entries by `value`.
         const text = isJson ? item.value : item.name;
+        const detail = isJson ? (item.group ?? item.note) : item.note;
+        const on = i === state.index;
         return (
           <button
             key={text}
             type="button"
             role="option"
-            aria-selected={i === state.index}
+            aria-selected={on}
             onMouseDown={(e) => {
               // mousedown, not click — the textarea must not blur first.
               e.preventDefault();
@@ -217,46 +286,39 @@ export default function EditorSuggest({
             }}
             onMouseEnter={() => setState((s) => (s ? { ...s, index: i } : s))}
             className={cn(
-              "flex w-full items-center gap-2 px-2.5 py-1 text-left transition-colors",
-              i === state.index ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted",
+              "flex w-full items-center gap-1.5 py-[3px] pr-2 pl-1.5 text-left leading-4 transition-colors",
+              on ? "bg-primary/15 text-primary" : "text-foreground/80 hover:bg-muted/60",
             )}
           >
             {isVault ? (
-              <KeyRound className="size-3 shrink-0" aria-hidden />
+              <KeyRound className="size-2.5 shrink-0 opacity-70" aria-hidden />
             ) : isJson ? (
-              <Braces className="size-3 shrink-0 text-primary/70" aria-hidden />
+              <Braces className="size-2.5 shrink-0 opacity-60" aria-hidden />
             ) : item.isDir ? (
-              <FolderClosed className="size-3 shrink-0 text-primary/70" aria-hidden />
+              <FolderClosed className="size-2.5 shrink-0 text-primary/70" aria-hidden />
             ) : (
-              <FileIcon className="size-3 shrink-0" aria-hidden />
+              <FileIcon className="size-2.5 shrink-0 opacity-70" aria-hidden />
             )}
 
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-mono text-[11px]">
-                {isVault || isJson ? text : `${text}${item.isDir ? "/" : ""}`}
-              </span>
-              {/* The schema's hint, verbatim — the same sentence the form shows
-                  under the control, so the two cannot paraphrase apart. */}
-              {(isVault || isJson) && item.note && (
-                <span className="block truncate text-[10px] text-muted-foreground/80">{item.note}</span>
-              )}
+            <span className="truncate font-mono text-[11px]">
+              {isVault || isJson ? text : `${text}${item.isDir ? "/" : ""}`}
             </span>
 
-            {isJson && item.group && (
-              <span className="shrink-0 text-[10px] text-muted-foreground/70">{item.group}</span>
+            {/* The schema's hint, verbatim — the same sentence the form shows
+                under the control, so the two cannot paraphrase apart. */}
+            {detail && (
+              <span className="ml-auto max-w-[45%] shrink-0 truncate pl-2 text-[10px] text-muted-foreground/60">
+                {detail}
+              </span>
             )}
 
             {/* Marks a secret without ever showing one. */}
             {isVault && item.secret && (
-              <Lock className="size-2.5 shrink-0 text-muted-foreground" aria-label="Secret" />
+              <Lock className="size-2.5 shrink-0 text-muted-foreground/70" aria-label="Secret" />
             )}
           </button>
         );
       })}
-
-      <p className="mt-0.5 border-t border-border px-2.5 pt-1 text-[10px] text-muted-foreground">
-        ↑↓ move · Tab insert · Esc dismiss
-      </p>
     </div>
   );
 }
