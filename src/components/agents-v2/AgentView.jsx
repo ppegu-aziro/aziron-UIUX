@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
-  Eye,
   Maximize2,
   Minimize2,
   Boxes,
   GitFork,
   MessageSquare,
   MoreVertical,
-  PenLine,
   Rocket,
   Sparkles,
   Upload,
@@ -33,7 +31,6 @@ import { useAgentsV2 } from "@/context/AgentsV2Context";
 import { KnowledgeDialog, ModelDialog, ReleaseDialog, ToolsDialog } from "./dialogs";
 import FileTree from "./FileTree";
 import SettingsPanel from "./SettingsPanel";
-import MarkdownPreview from "./MarkdownPreview";
 import AgentHalvesBar from "./AgentHalvesBar";
 import ReleasesPanel from "./ReleasesPanel";
 import FrontmatterEditor from "./FrontmatterEditor";
@@ -87,7 +84,6 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
   const [dialog, setDialog] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [releasesOpen, setReleasesOpen] = useState(false);
-  const [mode, setMode] = useState("edit");
   // The assistant is part of the editing surface, not a page-level panel,
   // and it is always opt-in.
   const [assist, setAssist] = useState(false);
@@ -120,7 +116,6 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
   if (!agent || !activeFile) return null;
 
   const isEntry = activeFile.path === "AGENT.md";
-  const isMarkdown = /\.md$/i.test(activeFile.path);
   const content = buffer?.path === activeFile.path ? buffer.value : activeFile.content;
   const named = Boolean(agent.name.trim());
   const hasBody = Boolean(agent.files.find((f) => f.path === "AGENT.md")?.content.trim());
@@ -350,27 +345,6 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
               {isEntry && <Badge variant="outline">entrypoint</Badge>}
 
               <div className="ml-auto flex items-center gap-2">
-                <div className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5">
-                  {[
-                    { id: "edit", label: "Edit", icon: PenLine },
-                    { id: "preview", label: "Preview", icon: Eye },
-                  ].map((m) => (
-                    <Button
-                      key={m.id}
-                      type="button"
-                      size="xs"
-                      variant={mode === m.id ? "secondary" : "ghost"}
-                      onClick={() => setMode(m.id)}
-                      aria-pressed={mode === m.id}
-                      disabled={!isMarkdown && m.id === "preview"}
-                      title={!isMarkdown && m.id === "preview" ? "Preview is for markdown files" : undefined}
-                    >
-                      <m.icon className="size-3" aria-hidden />
-                      {m.label}
-                    </Button>
-                  ))}
-                </div>
-
                 <Button
                   type="button"
                   size="xs"
@@ -403,40 +377,32 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
             {isEntry && <FrontmatterEditor agent={agent} />}
 
             <div className="relative flex min-h-[300px] flex-1 flex-col">
-              {mode === "preview" && isMarkdown ? (
-                <div className="min-h-[300px] flex-1 overflow-y-auto bg-muted/20">
-                  <MarkdownPreview source={content} />
-                </div>
-              ) : (
-                <>
-                  <Textarea
-                    ref={textareaRef}
-                    aria-label={`${activeFile.path} content`}
-                    value={content}
-                    onChange={(e) => writeFile(e.target.value)}
-                    placeholder={isEntry ? SCAFFOLD : undefined}
-                    className="min-h-[300px] flex-1 resize-none rounded-none border-0 bg-transparent font-mono text-[11px] leading-5 focus-visible:ring-0"
-                  />
-                  <PathSuggest
-                    textareaRef={textareaRef}
-                    value={content}
-                    currentPath={activeFile.path}
-                    files={agent.files}
-                    folders={agent.folders}
-                    onInsert={(from, to, text) => {
-                      const next = content.slice(0, from) + text + content.slice(to);
-                      writeFile(next);
-                      requestAnimationFrame(() => {
-                        const el = textareaRef.current;
-                        if (!el) return;
-                        const caret = from + text.length;
-                        el.focus();
-                        el.setSelectionRange(caret, caret);
-                      });
-                    }}
-                  />
-                </>
-              )}
+              <Textarea
+                ref={textareaRef}
+                aria-label={`${activeFile.path} content`}
+                value={content}
+                onChange={(e) => writeFile(e.target.value)}
+                placeholder={isEntry ? SCAFFOLD : undefined}
+                className="min-h-[300px] flex-1 resize-none rounded-none border-0 bg-transparent font-mono text-[11px] leading-5 focus-visible:ring-0"
+              />
+              <PathSuggest
+                textareaRef={textareaRef}
+                value={content}
+                currentPath={activeFile.path}
+                files={agent.files}
+                folders={agent.folders}
+                onInsert={(from, to, text) => {
+                  const next = content.slice(0, from) + text + content.slice(to);
+                  writeFile(next);
+                  requestAnimationFrame(() => {
+                    const el = textareaRef.current;
+                    if (!el) return;
+                    const caret = from + text.length;
+                    el.focus();
+                    el.setSelectionRange(caret, caret);
+                  });
+                }}
+              />
             </div>
 
             <p className="shrink-0 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
