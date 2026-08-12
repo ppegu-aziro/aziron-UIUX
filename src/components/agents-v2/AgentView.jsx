@@ -221,10 +221,6 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onGen
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => onGenerate?.(agent)}>
-            <Sparkles className="size-3.5" aria-hidden />
-            Generate
-          </Button>
           <Button type="button" variant="outline" size="sm" onClick={() => onChat?.(agent)}>
             <MessageSquare className="size-3.5" aria-hidden />
             Chat
@@ -262,24 +258,45 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onGen
 
       <div className="flex flex-col gap-4 lg:flex-row">
         <div className="min-w-0 flex-1">
-          {/* Tabs */}
-          <div className="mb-3 flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
-            {TABS.map((t) => (
-              <Button
-                key={t.id}
-                type="button"
-                size="sm"
-                variant={tab === t.id ? "secondary" : "ghost"}
-                onClick={() => setTab(t.id)}
-                aria-pressed={tab === t.id}
-              >
-                <t.icon className="size-3.5" aria-hidden />
-                {t.label}
-                {t.id === "files" && dirtyPaths.size > 0 && (
-                  <span className="ml-1 size-1.5 rounded-full bg-warning" aria-label="Unsaved" />
-                )}
-              </Button>
-            ))}
+          {/*
+            Tabs, and Generate beside them.
+
+            The header carries lifecycle actions — chat with it, fork it,
+            publish it, release it. Generating is none of those: it writes
+            into the content these tabs are showing, so it belongs at the
+            same altitude as the content rather than up with the verbs that
+            act on the agent as a whole.
+          */}
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
+              {TABS.map((t) => (
+                <Button
+                  key={t.id}
+                  type="button"
+                  size="sm"
+                  variant={tab === t.id ? "secondary" : "ghost"}
+                  onClick={() => setTab(t.id)}
+                  aria-pressed={tab === t.id}
+                >
+                  <t.icon className="size-3.5" aria-hidden />
+                  {t.label}
+                  {t.id === "files" && dirtyPaths.size > 0 && (
+                    <span className="ml-1 size-1.5 rounded-full bg-warning" aria-label="Unsaved" />
+                  )}
+                </Button>
+              ))}
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onGenerate?.(agent)}
+              title="Open the Agent Generator"
+            >
+              <Sparkles className="size-3.5" aria-hidden />
+              Generate
+            </Button>
           </div>
 
           {/* ── Instructions ───────────────────────────────────────────── */}
