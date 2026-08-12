@@ -35,6 +35,8 @@ const ROW_H = 22;
 const CHROME = 8;
 const MAX_ROWS = 8;
 const MAX_W = 260;
+/** Clearance kept between the list and the line it belongs to. */
+const GAP = 2;
 
 /**
  * Width of one character in the editor's font.
@@ -79,24 +81,35 @@ function place(el, value, start, count) {
   const padT = parseFloat(cs.paddingTop) || 0;
 
   const lineTop = el.offsetTop + padT + line * lh - el.scrollTop;
-  const height = Math.min(count, MAX_ROWS) * ROW_H + CHROME;
+  const lineBottom = lineTop + lh;
 
-  // Below the caret line by default, above it when that would run off the
-  // bottom and there is room up there.
-  const below = lineTop + lh + 2;
-  const above = lineTop - height - 2;
-  const wanted = below + height > el.clientHeight && above >= 0 ? above : below;
+  // The two bands the list may occupy. It never uses the strip between them,
+  // because that strip is the line being typed — and a list that covers the
+  // text it is completing has hidden the one thing you needed to see.
+  const roomBelow = el.clientHeight - lineBottom - GAP * 2;
+  const roomAbove = lineTop - GAP * 2;
 
-  // Then clamped into the pane regardless. Both branches above are relative to
-  // the caret's position in the DOCUMENT, and a caret the editor has not
-  // scrolled to is off-screen — which is how the list ended up floating below
-  // the last visible line, anchored to something the reader could not see.
-  const top = Math.max(0, Math.min(wanted, el.clientHeight - height));
+  // Below by preference, above only when below cannot hold the list and above
+  // genuinely has more room. Then the list is SIZED to that band rather than
+  // moved to fit it: shrinking scrolls a few rows out of view, whereas moving
+  // walks it over the caret, which is what it used to do in a short pane.
+  const wanted = Math.min(count, MAX_ROWS) * ROW_H + CHROME;
+  const useAbove = wanted > roomBelow && roomAbove > roomBelow;
+  const band = useAbove ? roomAbove : roomBelow;
+  const maxHeight = Math.max(ROW_H + CHROME, Math.min(wanted, band));
+
+  const anchored = useAbove ? lineTop - GAP - maxHeight : lineBottom + GAP;
+
+  // A last clamp into the pane. With a visible caret it is a no-op — both
+  // branches already fit by construction — and it only bites when the caret
+  // line is itself off-screen, where there is no visible text to cover and
+  // staying inside the pane is unambiguously the right answer.
+  const top = Math.max(0, Math.min(anchored, el.clientHeight - maxHeight));
 
   const x = el.offsetLeft + padL + col * charWidth(cs) - el.scrollLeft;
   const left = Math.max(4, Math.min(x, el.clientWidth - MAX_W - 8));
 
-  return { top, left };
+  return { top, left, maxHeight };
 }
 
 export default function EditorSuggest({
@@ -274,7 +287,9 @@ export default function EditorSuggest({
         top: state.pos.top,
         left: state.pos.left,
         maxWidth: MAX_W,
-        maxHeight: MAX_ROWS * ROW_H + 6,
+        // Sized to the room beside the caret line, so a squeezed list scrolls
+        // rather than growing over the text.
+        maxHeight: state.pos.maxHeight,
       }}
       className="absolute z-30 w-max min-w-[150px] overflow-x-hidden overflow-y-auto rounded-md border border-border/70 bg-popover/85 py-[3px] shadow-md ring-1 ring-black/5 backdrop-blur-sm"
     >
