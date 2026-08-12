@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
+  ChevronDown,
+  ChevronRight,
   Maximize2,
   Minimize2,
   Boxes,
@@ -96,6 +98,10 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
   const [focus, setFocus] = useState(null);
   const [activePath, setActivePath] = useState("AGENT.md");
   const [pendingDelete, setPendingDelete] = useState(null);
+  // Small screens only: the folder stacks above the editor there, so left open
+  // it costs half the screen before you reach the file. Above `lg` the tree is
+  // a column and this does nothing.
+  const [treeOpen, setTreeOpen] = useState(false);
 
   // Buffer for the file being typed into, flushed to the store shortly after
   // typing stops. Keeps every keystroke off global state without reintroducing
@@ -323,18 +329,48 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
               className={cn(
                 "flex min-h-0 w-full shrink-0 flex-col border-b border-border lg:border-b-0",
                 assist && "hidden lg:flex",
+                // Collapsed, the panel is just its 36px header — it must not
+                // hold the height its tree used to occupy.
+                !treeOpen && "lg:min-h-0",
                 focus === "folder" ? "lg:w-full" : "lg:border-r",
               )}
             >
               <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
-                <span className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
-                  Folder
-                </span>
+                {/*
+                  "Files", not "Folder": the column beside it is headed with a
+                  file path, so this one should name what it holds rather than
+                  the shape of the container holding it.
+
+                  The count is the part that earns its place on a phone — with
+                  the tree closed it is the only thing telling you there is
+                  more here than the file already on screen.
+
+                  Below `lg` this row is the disclosure. Above it, a heading.
+                */}
+                <button
+                  type="button"
+                  onClick={() => setTreeOpen((v) => !v)}
+                  aria-expanded={treeOpen}
+                  aria-controls="agent-file-tree"
+                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left lg:pointer-events-none"
+                >
+                  {treeOpen ? (
+                    <ChevronDown className="size-3 shrink-0 text-muted-foreground lg:hidden" aria-hidden />
+                  ) : (
+                    <ChevronRight className="size-3 shrink-0 text-muted-foreground lg:hidden" aria-hidden />
+                  )}
+                  <span className="text-[11px] font-medium text-muted-foreground">Files</span>
+                  <span className="font-mono text-[11px] text-muted-foreground/60">
+                    {agent.files.length}
+                  </span>
+                </button>
+
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon-sm"
-                  aria-label={focus === "folder" ? "Restore layout" : "Focus the folder"}
+                  className="hidden lg:inline-flex"
+                  aria-label={focus === "folder" ? "Restore layout" : "Focus the file list"}
                   aria-pressed={focus === "folder"}
                   onClick={() => setFocus(focus === "folder" ? null : "folder")}
                 >
@@ -345,12 +381,23 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
                   )}
                 </Button>
               </div>
-              <div className="flex flex-1 flex-col overflow-y-auto p-2">
+              <div
+                id="agent-file-tree"
+                className={cn(
+                  "flex-1 flex-col overflow-y-auto p-2",
+                  treeOpen ? "flex" : "hidden lg:flex",
+                )}
+              >
                 <FileTree
                   files={agent.files}
                   folders={agent.folders}
                   activePath={activeFile.path}
-                  onSelect={setActivePath}
+                  onSelect={(p) => {
+                    setActivePath(p);
+                    // On small screens the tree is covering the editor, so
+                    // choosing a file should hand the screen back to it.
+                    setTreeOpen(false);
+                  }}
                   onAction={onFileAction}
                   onCreate={createInline}
                   onRename={renameInline}
@@ -364,7 +411,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
             </div>
             {focus === null && (
               <Resizer
-                label="Resize folder panel"
+                label="Resize the file list"
                 onDrag={(dx) => setFolderW((w) => Math.min(420, Math.max(150, w + dx)))}
               />
             )}
