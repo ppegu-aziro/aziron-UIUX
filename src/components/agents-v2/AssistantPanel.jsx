@@ -143,7 +143,7 @@ function plan(prompt, agent, intent) {
   };
 }
 
-export default function AssistantPanel({ agent, onClose, seedPrompt, isExpanded = false, onToggleExpand }) {
+export default function AssistantPanel({ agent, onClose, seedPrompt, embedded = false, isExpanded = false, onToggleExpand }) {
   const { patch, addFile, saveFiles } = useAgentsV2();
   const [messages, setMessages] = useState(() => [
     {
@@ -160,30 +160,9 @@ export default function AssistantPanel({ agent, onClose, seedPrompt, isExpanded 
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
 
-  useEffect(() => {
-    const t = setTimeout(() => inputRef.current?.focus(), 50);
-    return () => clearTimeout(t);
-  }, []);
-
-  // A sentence typed on the catalog becomes this conversation's first turn, so
-  // stating intent and getting a draft are one action rather than two screens.
-  const seeded = useRef(false);
-  useEffect(() => {
-    if (seedPrompt && !seeded.current) {
-      seeded.current = true;
-      send(seedPrompt);
-    }
-  }, [seedPrompt]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, busy]);
-
-  if (!agent) return null;
-
   const send = async (text, intent) => {
     const q = (text ?? input).trim();
-    if (!q || busy) return;
+    if (!q || busy || !agent) return;
     setInput("");
     setMessages((m) => [...m, { role: "user", text: q }]);
     setBusy(true);
@@ -214,16 +193,47 @@ export default function AssistantPanel({ agent, onClose, seedPrompt, isExpanded 
     setBusy(false);
   };
 
+  useEffect(() => {
+    const t = setTimeout(() => inputRef.current?.focus(), 50);
+    return () => clearTimeout(t);
+  }, []);
+
+  // A sentence typed on the catalog becomes this conversation's first turn, so
+  // stating intent and getting a draft are one action rather than two screens.
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seedPrompt && !seeded.current) {
+      seeded.current = true;
+      send(seedPrompt);
+    }
+  }, [seedPrompt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages, busy]);
+
+  if (!agent) return null;
+
+
+  // Embedded: it is a column inside the editor card, so it fills its slot and
+  // brings no border or animation of its own.
+  const Shell = embedded ? "div" : motion.div;
+  const shellProps = embedded
+    ? { className: "flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/30" }
+    : {
+        initial: { width: 0, opacity: 0 },
+        animate: { width: isExpanded ? "100%" : 400, opacity: 1 },
+        exit: { width: 0, opacity: 0 },
+        transition: { duration: 0.22, ease: "easeInOut" },
+        className: `${isExpanded ? "flex-1 min-w-0" : "flex-shrink-0"} border-l border-border bg-muted flex flex-col overflow-hidden`,
+        style: { minWidth: 0 },
+      };
+
   return (
-    <motion.div
-      initial={{ width: 0, opacity: 0 }}
-      animate={{ width: isExpanded ? "100%" : 400, opacity: 1 }}
-      exit={{ width: 0, opacity: 0 }}
-      transition={{ duration: 0.22, ease: "easeInOut" }}
-      className={`${isExpanded ? "flex-1 min-w-0" : "flex-shrink-0"} border-l border-border bg-muted flex flex-col overflow-hidden`}
-      style={{ minWidth: 0 }}
-    >
-      <div className="flex h-16 flex-shrink-0 items-center gap-2 border-b border-border bg-card px-4">
+    <Shell {...shellProps}>
+      <div className={embedded
+        ? "flex h-11 flex-shrink-0 items-center gap-2 border-b border-border bg-card px-3"
+        : "flex h-16 flex-shrink-0 items-center gap-2 border-b border-border bg-card px-4"}>
         <div className="flex size-9 flex-shrink-0 items-center justify-center rounded-[4px] border border-primary/30 bg-primary/10">
           <Sparkles size={16} className="text-primary" />
         </div>
@@ -378,6 +388,6 @@ export default function AssistantPanel({ agent, onClose, seedPrompt, isExpanded 
           </div>
         </div>
       </div>
-    </motion.div>
+    </Shell>
   );
 }

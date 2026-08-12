@@ -34,6 +34,8 @@ import MarkdownPreview from "./MarkdownPreview";
 import AgentHalvesBar from "./AgentHalvesBar";
 import ReleasesPanel from "./ReleasesPanel";
 import FrontmatterEditor from "./FrontmatterEditor";
+import AssistantPanel from "./AssistantPanel";
+import PathSuggest from "./PathSuggest";
 
 /**
  * The agent workspace.
@@ -63,7 +65,7 @@ One sentence on what this agent does.
 ## When to ask first
 - What it must never guess at.`;
 
-export default function AgentView({ agentId, onBack, onDistribute, onChat, onAssistant, assistantOpen }) {
+export default function AgentView({ agentId, onBack, onDistribute, onChat, seedPrompt }) {
   const {
     get,
     patch,
@@ -82,6 +84,9 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onAss
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [releasesOpen, setReleasesOpen] = useState(false);
   const [mode, setMode] = useState("edit");
+  // The assistant is part of the editing surface, not a page-level panel.
+  // Seeded creates arrive with it already open.
+  const [assist, setAssist] = useState(Boolean(seedPrompt));
   const [activePath, setActivePath] = useState("AGENT.md");
   const [pendingDelete, setPendingDelete] = useState(null);
 
@@ -93,6 +98,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onAss
   // stops matching, which is one fewer render and one fewer thing to get wrong.
   const [buffer, setBuffer] = useState(null); // { path, value }
   const flushRef = useRef(null);
+  const textareaRef = useRef(null);
 
   const activeFile = useMemo(
     () => agent?.files.find((f) => f.path === activePath) ?? agent?.files[0],
@@ -185,17 +191,6 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onAss
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <Button
-            type="button"
-            variant={assistantOpen ? "secondary" : "outline"}
-            size="sm"
-            aria-pressed={assistantOpen}
-            onClick={() => onAssistant?.(agent)}
-          >
-            <Sparkles className="size-3.5" aria-hidden />
-            Assistant
-          </Button>
-
           <DropdownMenu>
             <DropdownMenuTrigger
               render={<Button type="button" variant="outline" size="icon-sm" aria-label="More actions" />}
@@ -294,43 +289,100 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat, onAss
           <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
             <span className="truncate font-mono text-[11px] text-muted-foreground">{activeFile.path}</span>
             {isEntry && <Badge variant="outline">entrypoint</Badge>}
-            <div className="ml-auto flex items-center gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5">
-              {[
-                { id: "edit", label: "Edit", icon: PenLine },
-                { id: "preview", label: "Preview", icon: Eye },
-              ].map((m) => (
-                <Button
-                  key={m.id}
-                  type="button"
-                  size="xs"
-                  variant={mode === m.id ? "secondary" : "ghost"}
-                  onClick={() => setMode(m.id)}
-                  aria-pressed={mode === m.id}
-                  disabled={!isMarkdown && m.id === "preview"}
-                  title={!isMarkdown && m.id === "preview" ? "Preview is for markdown files" : undefined}
-                >
-                  <m.icon className="size-3" aria-hidden />
-                  {m.label}
-                </Button>
-              ))}
+            {/*
+              One toolbar for "how am I working on this file". Edit and Preview
+              are two views of the document; Assistant splits the pane beside
+              it rather than replacing it, because the whole claim of the panel
+              is that you watch the file change while you ask.
+            */}
+            <div className="ml-auto flex items-center gap-2">
+              <div className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5">
+                {[
+                  { id: "edit", label: "Edit", icon: PenLine },
+                  { id: "preview", label: "Preview", icon: Eye },
+                ].map((m) => (
+                  <Button
+                    key={m.id}
+                    type="button"
+                    size="xs"
+                    variant={mode === m.id ? "secondary" : "ghost"}
+                    onClick={() => setMode(m.id)}
+                    aria-pressed={mode === m.id}
+                    disabled={!isMarkdown && m.id === "preview"}
+                    title={!isMarkdown && m.id === "preview" ? "Preview is for markdown files" : undefined}
+                  >
+                    <m.icon className="size-3" aria-hidden />
+                    {m.label}
+                  </Button>
+                ))}
+              </div>
+
+              <Button
+                type="button"
+                size="xs"
+                variant={assist ? "secondary" : "outline"}
+                aria-pressed={assist}
+                onClick={() => setAssist((v) => !v)}
+                title="Ask for changes to this agent"
+              >
+                <Sparkles className="size-3" aria-hidden />
+                Assistant
+              </Button>
             </div>
           </div>
 
           {isEntry && <FrontmatterEditor agent={agent} />}
 
-          {mode === "preview" && isMarkdown ? (
-            <div className="min-h-[360px] flex-1 overflow-y-auto bg-muted/20">
-              <MarkdownPreview source={content} />
+          <div className="flex min-h-[380px] flex-1 flex-col lg:flex-row">
+            <div className="relative flex min-h-[300px] min-w-0 flex-1 flex-col">
+              {mode === "preview" && isMarkdown ? (
+                <div className="min-h-[300px] flex-1 overflow-y-auto bg-muted/20">
+                  <MarkdownPreview source={content} />
+                </div>
+              ) : (
+                <>
+                  <Textarea
+                    ref={textareaRef}
+                    aria-label={`${activeFile.path} content`}
+                    value={content}
+                    onChange={(e) => writeFile(e.target.value)}
+                    placeholder={isEntry ? SCAFFOLD : undefined}
+                    className="min-h-[300px] flex-1 resize-none rounded-none border-0 bg-transparent font-mono text-[11px] leading-5 focus-visible:ring-0"
+                  />
+                  {/* Typing ./ or ../ offers what is actually in the folder. */}
+                  <PathSuggest
+                    textareaRef={textareaRef}
+                    value={content}
+                    currentPath={activeFile.path}
+                    files={agent.files}
+                    folders={agent.folders}
+                    onInsert={(from, to, text) => {
+                      const next = content.slice(0, from) + text + content.slice(to);
+                      writeFile(next);
+                      requestAnimationFrame(() => {
+                        const el = textareaRef.current;
+                        if (!el) return;
+                        const caret = from + text.length;
+                        el.focus();
+                        el.setSelectionRange(caret, caret);
+                      });
+                    }}
+                  />
+                </>
+              )}
             </div>
-          ) : (
-            <Textarea
-              aria-label={`${activeFile.path} content`}
-              value={content}
-              onChange={(e) => writeFile(e.target.value)}
-              placeholder={isEntry ? SCAFFOLD : undefined}
-              className="min-h-[380px] flex-1 resize-none rounded-none border-0 bg-transparent font-mono text-[11px] leading-5 focus-visible:ring-0"
-            />
-          )}
+
+            {assist && (
+              <div className="flex min-h-[300px] w-full shrink-0 flex-col border-t border-border lg:w-[380px] lg:border-t-0 lg:border-l">
+                <AssistantPanel
+                  agent={agent}
+                  seedPrompt={seedPrompt}
+                  onClose={() => setAssist(false)}
+                  embedded
+                />
+              </div>
+            )}
+          </div>
 
           <p className="border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
             {isEntry

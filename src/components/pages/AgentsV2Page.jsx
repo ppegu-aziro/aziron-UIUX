@@ -13,7 +13,6 @@ import CatalogView from "@/components/agents-v2/CatalogView";
 import AgentView from "@/components/agents-v2/AgentView";
 import DistributeView from "@/components/agents-v2/DistributeView";
 import ChatPanel from "@/components/agents-v2/ChatPanel";
-import AssistantPanel from "@/components/agents-v2/AssistantPanel";
 import { AgentsV2Provider, useAgentsV2 } from "@/context/AgentsV2Context";
 
 /**
@@ -37,13 +36,16 @@ function AgentsV2Inner({ onNavigate }) {
   const { get, create, remove, reset } = useAgentsV2();
   const [view, setView] = useState("catalog");
   const [agentId, setAgentId] = useState(null);
-  const [panel, setPanel] = useState(null); // { type: "chat" | "assistant", id, seed? }
+  const [panel, setPanel] = useState(null); // { type: "chat", id }
+  // A sentence from the catalog, handed to the editor to open its assistant with.
+  const [seed, setSeed] = useState(null);
   const [expanded, setExpanded] = useState(false);
 
   const panelAgent = panel ? get(panel.id) : null;
   const hideMainColumn = Boolean(panelAgent) && expanded;
 
   const openEditor = (a) => {
+    setSeed(null);
     setAgentId(a?.id ?? a);
     setView("agent");
     // Arrive on a clean editor. A panel left open from the previous action is
@@ -77,7 +79,10 @@ function AgentsV2Inner({ onNavigate }) {
    * the slug and the release unless someone remembers to change it. The
    * Assistant is not opened either; this is the hand-authoring path.
    */
-  const startBlank = () => openEditor(blankDraft());
+  const startBlank = () => {
+    setSeed(null);
+    openEditor(blankDraft());
+  };
 
   /**
    * Create from a sentence typed on the catalog.
@@ -88,9 +93,10 @@ function AgentsV2Inner({ onNavigate }) {
    */
   const createFromIntent = (text) => {
     const record = blankDraft();
+    setSeed(text);
     setAgentId(record.id);
     setView("agent");
-    setPanel({ type: "assistant", id: record.id, seed: text });
+    setPanel(null);
   };
 
   /**
@@ -176,10 +182,7 @@ function AgentsV2Inner({ onNavigate }) {
                     onBack={leaveEditor}
                     onDistribute={() => setView("distribute")}
                     onChat={(a) => openPanel("chat", a)}
-                    onAssistant={(a) =>
-                      panel?.type === "assistant" ? closePanel() : openPanel("assistant", a)
-                    }
-                    assistantOpen={panel?.type === "assistant"}
+                    seedPrompt={seed}
                   />
                 )}
 
@@ -199,14 +202,6 @@ function AgentsV2Inner({ onNavigate }) {
               onClose={closePanel}
               isExpanded={expanded}
               onToggleExpand={() => setExpanded((v) => !v)}
-            />
-          )}
-          {panelAgent && panel.type === "assistant" && (
-            <AssistantPanel
-              key={`assistant-${panelAgent.id}`}
-              agent={panelAgent}
-              seedPrompt={panel.seed}
-              onClose={closePanel}
             />
           )}
         </AnimatePresence>
