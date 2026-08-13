@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { AGENT_JSON_PATH } from "@/data/agentJsonSchema";
 import { PREPARATION_PATH } from "@/data/preparationSchema";
 import { useAgentsV2 } from "@/context/AgentsV2Context";
+import { reconcileBuffer } from "./utils/editorBuffer";
 import { KnowledgeDialog, ModelDialog, ReleaseDialog, ToolsDialog } from "./dialogs";
 import FileTree from "./FileTree";
 import SettingsPanel from "./SettingsPanel";
@@ -132,10 +133,11 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
   //
   // Keyed by path rather than cleared by an effect: switching files then simply
   // stops matching, which is one fewer render and one fewer thing to get wrong.
-  // { path, value, committed }. `committed` rather than a byte comparison
+  // { path, value, committed, echo }. `committed` rather than a byte comparison
   // against the file: AGENT.json is generated, so its canonical text can never
   // equal what the user typed once they reformat it, and a byte compare would
   // leave the unsaved dot permanently lit and make Ctrl-S always claim a save.
+  // `echo` is what keeps that from turning into a stale view -- see below.
   const [buffer, setBuffer] = useState(null);
   const flushRef = useRef(null);
   const textareaRef = useRef(null);
@@ -173,6 +175,18 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
     () => files.find((f) => f.path === activePath) ?? files[0],
     [files, activePath],
   );
+
+  /*
+   * The record is the single source of truth, and the overlay is dropped the
+   * moment it stops describing it. The rule itself is in editorBuffer.js, with
+   * the reasoning and the three cases.
+   *
+   * Applied during render rather than in an effect: an effect would paint one
+   * frame of the stale text before correcting it, which on a file somebody is
+   * reading is exactly the flicker that makes them doubt what they just saw.
+   */
+  const reconciled = reconcileBuffer(buffer, activeFile);
+  if (reconciled !== buffer) setBuffer(reconciled);
   /*
    * Follow the writing, without taking the keyboard.
    *
@@ -222,7 +236,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
     const pending = buffer?.path === activeFile.path && !buffer.committed;
     if (pending) {
       saveFiles(agent.id, { [activeFile.path]: buffer.value });
-      setBuffer((b) => (b ? { ...b, committed: true } : b));
+      setBuffer((b) => (b ? { ...b, committed: true, echo: null } : b));
       toast.success("Draft saved");
     } else {
       toast.message("Draft is already saved");
@@ -274,11 +288,11 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
 
   const writeFile = (next) => {
     const path = activeFile.path;
-    setBuffer({ path, value: next, committed: false });
+    setBuffer({ path, value: next, committed: false, echo: null });
     clearTimeout(flushRef.current);
     flushRef.current = setTimeout(() => {
       saveFiles(agent.id, { [path]: next });
-      setBuffer((b) => (b && b.path === path && b.value === next ? { ...b, committed: true } : b));
+      setBuffer((b) => (b && b.path === path && b.value === next ? { ...b, committed: true, echo: null } : b));
     }, 300);
   };
 
