@@ -51,6 +51,7 @@ export default function PreparationSetup({
   // the pane keeps rendering the last version that did.
   onEdit,
   onAdd,
+  editableAt,
 }) {
   const [adding, setAdding] = useState(null);
   const plans = useMemo(() => Object.fromEntries(OS_TABS.map((t) => [t.goos, planFor(js, t.goos)])), [js]);
@@ -231,7 +232,14 @@ export default function PreparationSetup({
               </h4>
               <div className="rounded-lg border border-border/60 bg-muted/15">
                 {plan.prechecks.map((p) => (
-                  <CheckRow key={p.path} node={p} onJump={onJump} />
+                  <CheckRow
+                    key={p.path}
+                    node={p}
+                    goos={goos}
+                    onJump={onJump}
+                    onEdit={onEdit}
+                    editableAt={editableAt}
+                  />
                 ))}
               </div>
               <p className="mt-1 text-[10px] text-muted-foreground/70">
@@ -275,7 +283,15 @@ export default function PreparationSetup({
                 </h4>
                 <div className="space-y-1.5">
                   {phase.steps.map((s) => (
-                    <PreparationStepCard key={s.path} step={s} onJump={onJump} cursorPath={cursorPath} />
+                    <PreparationStepCard
+                      key={s.path}
+                      step={s}
+                      goos={goos}
+                      onJump={onJump}
+                      cursorPath={cursorPath}
+                      onEdit={onEdit}
+                      editableAt={editableAt}
+                    />
                   ))}
                 </div>
                 {onAdd && adding !== phase.id && (
@@ -315,7 +331,7 @@ export default function PreparationSetup({
               </h4>
               <div className="rounded-lg border border-border/60 bg-muted/15">
                 {plan.verify.map((v) => (
-                  <CheckRow key={v.path} node={v} onJump={onJump} />
+                  <CheckRow key={v.path} node={v} goos={goos} onJump={onJump} />
                 ))}
               </div>
             </section>

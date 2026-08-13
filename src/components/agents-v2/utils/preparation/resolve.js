@@ -16,6 +16,7 @@
  */
 
 import { GOOS, PHASES } from "@/data/preparationSchema";
+import { scopeOf } from "./scope";
 
 /**
  * The body that applies to `goos`, and the raw key it came from.
@@ -196,6 +197,13 @@ export function planFor(js, goos) {
       from: hit?.key ?? null,
       check: hit?.check ?? null,
       path: `preparation.precheck[${i}]`,
+      // Segments, never a dotted string: a platform key can contain a comma
+      // ("darwin,linux"), so a path that gets split apart loses it.
+      segments: ["preparation", "precheck", i],
+      checkSegments: hit ? ["preparation", "precheck", i, "platforms", hit.key, "check"] : null,
+      // Which machines a write here would reach. The card renders it; the
+      // field component refuses to render a control without it.
+      scope: scopeOf(p, hit?.key ?? null, goos),
     };
   });
 
@@ -216,15 +224,25 @@ export function planFor(js, goos) {
         from: hit?.key ?? null,
         select: hit?.entry?.select ?? "auto",
         sugar: ladder.some((x) => x.sugar),
-        strategies: ladder.map((st, j) => ({
-          index: j,
-          id: st?.id ?? `strategy-${j + 1}`,
-          label: st?.label ?? null,
-          requires: asArray(st?.requires),
-          pathHints: asArray(st?.path_hints),
-          actions: asArray(st?.actions),
-          path: `preparation.preconfigure.${phase.id}[${i}].platforms.${hit?.key}.strategies[${j}]`,
-        })),
+        segments: ["preparation", "preconfigure", phase.id, i],
+        entrySegments: hit ? ["preparation", "preconfigure", phase.id, i, "platforms", hit.key] : null,
+        scope: scopeOf(s, hit?.key ?? null, goos),
+        strategies: ladder.map((st, j) => {
+          const base = hit ? ["preparation", "preconfigure", phase.id, i, "platforms", hit.key] : null;
+          return {
+            index: j,
+            id: st?.id ?? `strategy-${j + 1}`,
+            label: st?.label ?? null,
+            requires: asArray(st?.requires),
+            pathHints: asArray(st?.path_hints),
+            actions: asArray(st?.actions),
+            // `actions:` shorthand has no `strategies` key in the file, so a
+            // write has to target the authored shape, not the expanded one.
+            segments: base ? (st?.sugar ? base : [...base, "strategies", j]) : null,
+            sugar: Boolean(st?.sugar),
+            path: `preparation.preconfigure.${phase.id}[${i}].platforms.${hit?.key}.strategies[${j}]`,
+          };
+        }),
         path: `preparation.preconfigure.${phase.id}[${i}]`,
       };
     }),

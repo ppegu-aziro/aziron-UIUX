@@ -22,7 +22,10 @@ import { scopeSentence } from "./utils/preparation/scope";
  */
 
 /** Click-to-edit text. Enter commits, Escape reverts, blur commits. */
-function InlineText({ value, placeholder, mono, multiline, onCommit, validate, label }) {
+function InlineText({ value, placeholder, mono, multiline, onCommit, validate, label, name }) {
+  // A visually unlabelled field still needs a name. `label` is the visible
+  // one and may be absent; `name` is what a screen reader is told.
+  const accessibleName = name ?? label ?? placeholder ?? "value";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const ref = useRef(null);
@@ -52,7 +55,7 @@ function InlineText({ value, placeholder, mono, multiline, onCommit, validate, l
       <button
         type="button"
         onClick={start}
-        aria-label={`Edit ${label}`}
+        aria-label={`Edit ${accessibleName}`}
         className={cn(
           "-mx-1 rounded px-1 text-left transition-colors hover:bg-muted",
           mono && "font-mono",
@@ -69,7 +72,7 @@ function InlineText({ value, placeholder, mono, multiline, onCommit, validate, l
       <Input
         ref={ref}
         value={draft}
-        aria-label={label}
+        aria-label={accessibleName}
         aria-invalid={Boolean(error)}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
@@ -174,6 +177,7 @@ export default function PreparationField({
   caption,
   firstIsProgram,
   validate,
+  name,
   onCommit,
   onAdd,
   onRemove,
@@ -233,6 +237,7 @@ export default function PreparationField({
             onCommit={onCommit}
             validate={validate}
             label={label}
+            name={name}
           />
         )}
       </div>

@@ -2,6 +2,7 @@ import { AlertTriangle, CornerDownRight, Hand, Lock, ShieldAlert, Terminal } fro
 
 import { cn } from "@/lib/utils";
 import { previewArgv } from "./utils/preparation/resolve";
+import PreparationField from "./PreparationField";
 
 /**
  * One resolved precheck or step, for one machine.
@@ -17,6 +18,14 @@ import { previewArgv } from "./utils/preparation/resolve";
  * meant for — so editing happens in the file, where the key you are changing is
  * written down in front of you.
  */
+
+/** What the value under each check kind actually is. */
+const KIND_LABEL = {
+  binary: "Program name",
+  env: "Variable name",
+  file: "Path",
+  "env-file": "Path to the env file",
+};
 
 const COVERAGE = {
   covered: { label: "covered", cls: "border-success/30 bg-success/10 text-success" },
@@ -61,7 +70,7 @@ function Chip({ children, tone = "muted", icon: Icon, title }) {
 }
 
 /** A check, described rather than judged. */
-export function CheckRow({ node, onJump }) {
+export function CheckRow({ node, goos, onJump, onEdit, editableAt }) {
   const c = node.check;
   const cov = COVERAGE[node.coverage];
 
@@ -70,7 +79,24 @@ export function CheckRow({ node, onJump }) {
       <span className={cn("mt-0.5 size-1.5 shrink-0 rounded-full", node.coverage === "undefined" ? "bg-destructive" : "bg-muted-foreground/40")} aria-hidden />
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-xs font-medium text-foreground">{node.label || node.id}</span>
+          {onEdit ? (
+            /* The label sits ABOVE the platforms map, so one machine's tab is
+               the only place it appears and an edit reaches exactly one key. */
+            <span className="text-xs font-medium text-foreground">
+              <PreparationField
+                label={null}
+                name="Check name"
+                scope={{ kind: "exact", shared: false, others: [], covers: [], key: null }}
+                goos={goos}
+                value={node.label}
+                placeholder="Name this check"
+                validate={(v) => (v.trim() ? null : "A check needs a name.")}
+                onCommit={(v) => onEdit([...node.segments, "label"], v)}
+              />
+            </span>
+          ) : (
+            <span className="text-xs font-medium text-foreground">{node.label || node.id}</span>
+          )}
           {node.dedupKey && (
             <Chip title="Shared machine-wide, so two agents needing it check once">
               shared as {node.dedupKey}
@@ -89,6 +115,29 @@ export function CheckRow({ node, onJump }) {
                 <span className="text-muted-foreground/60">$ </span>
                 {previewArgv(c.argv)}
               </p>
+            ) : onEdit && node.checkSegments ? (
+              /* Under `platforms.<key>`, so this is where an edit can reach a
+                 machine you are not looking at — and where the field component
+                 puts its sentence. */
+              <PreparationField
+                label={KIND_LABEL[c.kind] ?? c.kind}
+                scope={node.scope}
+                goos={goos}
+                mono
+                value={String(c.value ?? "")}
+                placeholder="not set"
+                editable={editableAt?.([...node.checkSegments, "value"])}
+                validate={(v) =>
+                  // The same shape the validator enforces: a bare name, not a
+                  // path. Stated as what IS allowed rather than as a list of
+                  // forbidden characters, which is one fewer thing to get wrong.
+                  c.kind === "binary" && v && !/^[A-Za-z0-9._+-]+$/.test(v)
+                    ? "A bare program name, looked up on PATH — not a path."
+                    : null
+                }
+                onCommit={(v) => onEdit([...node.checkSegments, "value"], v)}
+                onOpenFile={onJump}
+              />
             ) : (
               <p className="font-mono text-[11px] text-muted-foreground">
                 {c.kind} · {String(c.value ?? "")}
@@ -119,7 +168,7 @@ export function CheckRow({ node, onJump }) {
 }
 
 /** A step, with its strategy ladder. */
-export default function PreparationStepCard({ step, onJump, cursorPath }) {
+export default function PreparationStepCard({ step, goos, onJump, cursorPath, onEdit, editableAt }) {
   const cov = COVERAGE[step.coverage];
   const focused = cursorPath && step.path && cursorPath.startsWith(step.path);
 
@@ -132,7 +181,22 @@ export default function PreparationStepCard({ step, onJump, cursorPath }) {
     >
       <div className="flex flex-wrap items-start gap-2 px-3 pt-2">
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium text-foreground">{step.label || step.id}</p>
+          {onEdit ? (
+            <p className="text-xs font-medium text-foreground">
+              <PreparationField
+                label={null}
+                name="Step name"
+                scope={{ kind: "exact", shared: false, others: [], covers: [], key: null }}
+                goos={goos}
+                value={step.label}
+                placeholder="Name this step"
+                validate={(v) => (v.trim() ? null : "A step needs a name.")}
+                onCommit={(v) => onEdit([...step.segments, "label"], v)}
+              />
+            </p>
+          ) : (
+            <p className="text-xs font-medium text-foreground">{step.label || step.id}</p>
+          )}
           {step.when?.precheck && (
             <p className="mt-0.5 text-[11px] text-muted-foreground">
               runs when <span className="text-foreground">{step.when.precheck}</span> is{" "}
@@ -168,6 +232,7 @@ export default function PreparationStepCard({ step, onJump, cursorPath }) {
           <ol className="mt-1 space-y-px px-3 pb-2">
             {step.strategies.map((s, i) => {
               const unconditional = s.requires.length === 0;
+              const last = i === step.strategies.length - 1;
               const manual = s.actions.every((a) => a?.kind === "instructions");
               return (
                 <li
@@ -180,9 +245,30 @@ export default function PreparationStepCard({ step, onJump, cursorPath }) {
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="font-mono text-[11px] text-foreground">{s.label ?? s.id}</span>
-                      <Chip title={unconditional ? "Nothing has to be installed first" : "Only if these are on PATH"}>
-                        {unconditional ? "always available" : `needs ${s.requires.join(", ")}`}
-                      </Chip>
+                      {onEdit && s.segments && !last ? (
+                        /* Also under `platforms.<key>`. The LAST rung is left
+                           alone: it is what runs when nothing else is
+                           available, so adding a requirement to it is exactly
+                           the dead end the schema forbids. */
+                        <PreparationField
+                          label="Only if these are on PATH"
+                          scope={step.scope}
+                          goos={goos}
+                          control="chips"
+                          value={s.requires}
+                          placeholder="brew"
+                          caption={unconditional ? "always available" : undefined}
+                          editable={editableAt?.([...s.segments, "requires"])}
+                          onAdd={(v) => onEdit([...s.segments, "requires", s.requires.length], v)}
+                          onRemove={(i) =>
+                            onEdit([...s.segments, "requires", i], null)
+                          }
+                        />
+                      ) : (
+                        <Chip title={unconditional ? "Nothing has to be installed first" : "Only if these are on PATH"}>
+                          {unconditional ? "always available" : `needs ${s.requires.join(", ")}`}
+                        </Chip>
+                      )}
                       {s.actions.some((a) => a?.elevation === "required") && (
                         <Chip tone="warning" icon={ShieldAlert}>needs admin</Chip>
                       )}

@@ -9,7 +9,7 @@ import { PREPARATION_PATH, OS_TABS } from "@/data/preparationSchema";
 import { lineOfPath, parsePreparation, pathAt } from "./utils/preparation/document";
 import { lintPreparation } from "./utils/preparation/lint";
 import { repairFor } from "./utils/preparation/repairs";
-import { applyEdit, applyRepair } from "./utils/preparation/edit";
+import { applyEdit, applyRepair, editableAt } from "./utils/preparation/edit";
 import { appendItem, renderFragment } from "./utils/preparation/yamlSplice";
 import PreparationSetup from "./PreparationSetup";
 import EditorSuggest from "./EditorSuggest";
@@ -203,6 +203,9 @@ export default function PreparationView({
   const editValue = (path, value) =>
     commit(applyEdit(text, live.doc ?? shown.doc, path, value), "Updated");
 
+  /** Whether a path can be edited in place, so a field can refuse with a reason. */
+  const canEdit = (path) => editableAt(text, live.doc ?? shown.doc, path);
+
   const fix = (repair) => commit(applyRepair(repair, settled), repair.label);
 
   /** Add a precheck or a step, from the inline form. */
@@ -285,7 +288,7 @@ export default function PreparationView({
               cursorPath={cursorPath}
               onJump={jump}
               {...(live.js
-                ? { onEdit: editValue, onAdd: add }
+                ? { onEdit: editValue, onAdd: add, editableAt: canEdit }
                 : // Nothing is editable while the text does not parse: the
                   // splice targets are found in the tree, and the tree is the
                   // one that was last valid, not the one on screen.

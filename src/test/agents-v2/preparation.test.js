@@ -927,3 +927,87 @@ describe("applyEdit", () => {
     expect(comments(r.text)).toEqual(comments(t));
   });
 });
+
+/**
+ * The wiring, not the pieces.
+ *
+ * `scopeOf` and `applyEdit` were each tested alone and both passed while the
+ * cards handed neither of them anything — the invariant existed and was
+ * unreachable. What matters is that the segments a card commits through and the
+ * scope it renders the warning from are derived from the SAME resolution, so
+ * the sentence can never describe a different key than the write lands on.
+ */
+describe("the target a card writes through", () => {
+  const shared = [
+    "preparation:",
+    "  precheck:",
+    "    - id: docker",
+    "      label: Docker",
+    "      platforms:",
+    "        all:",
+    "          check:",
+    "            kind: binary",
+    "            value: docker",
+    "",
+  ].join("\n");
+
+  it("points at the key the row resolved from, not at the tab", () => {
+    const { js } = parsePreparation(shared);
+    for (const goos of GOOS) {
+      const node = planFor(js, goos).prechecks[0];
+      expect(node.from).toBe("all");
+      expect(node.checkSegments).toEqual(["preparation", "precheck", 0, "platforms", "all", "check"]);
+      // The sentence and the write agree because both come from `hit.key`.
+      expect(node.scope.key).toBe("all");
+      expect(node.scope.shared).toBe(true);
+    }
+  });
+
+  it("edits every machine when the row is shared, and says so first", () => {
+    const { doc, js } = parsePreparation(shared);
+    const node = planFor(js, "darwin").prechecks[0];
+    expect(scopeSentence(node.scope, "darwin")).toContain("Linux and Windows");
+
+    const out = applyEdit(shared, doc, [...node.checkSegments, "value"], "podman");
+    expect(out.ok).toBe(true);
+    for (const goos of GOOS) {
+      expect(resolveCheck(parsePreparation(out.text).js.preparation.precheck[0], goos).check.value).toBe("podman");
+    }
+  });
+
+  it("edits one machine when the row is its own, and says nothing", () => {
+    const own = shared.replace("        all:", "        darwin:");
+    const { doc, js } = parsePreparation(own);
+    const node = planFor(js, "darwin").prechecks[0];
+    expect(node.scope.shared).toBe(false);
+
+    const out = applyEdit(own, doc, [...node.checkSegments, "value"], "podman");
+    expect(out.ok).toBe(true);
+    const after = parsePreparation(out.text).js.preparation.precheck[0];
+    expect(resolveCheck(after, "darwin").check.value).toBe("podman");
+    expect(resolveCheck(after, "linux")).toBeNull();
+  });
+
+  it("targets the authored shape when a step used the `actions:` shorthand", () => {
+    const sugar = [
+      "preparation:",
+      "  preconfigure:",
+      "    commands:",
+      "      - id: brew",
+      "        label: Homebrew",
+      "        platforms:",
+      "          all:",
+      "            actions:",
+      "              - kind: instructions",
+      "                message: Install it by hand.",
+      "",
+    ].join("\n");
+    const { js } = parsePreparation(sugar);
+    const step = planFor(js, "darwin").phases.flatMap((p) => p.steps)[0];
+    // No `strategies` key exists in the file, so a write must not invent one.
+    expect(step.strategies[0].sugar).toBe(true);
+    expect(step.strategies[0].segments).toEqual([
+      "preparation", "preconfigure", "commands", 0, "platforms", "all",
+    ]);
+  });
+});
