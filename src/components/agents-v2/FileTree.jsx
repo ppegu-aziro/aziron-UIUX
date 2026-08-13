@@ -361,6 +361,7 @@ export default function FileTree({
   files,
   folders = [],
   revealed = EMPTY,
+  create,
   activePath,
   onSelect,
   onAction,
@@ -388,6 +389,11 @@ export default function FileTree({
   const forced = useMemo(() => new Set(ancestorsOf([...revealed])), [revealed]);
   const isOpen = (path) => (expanded.has(path) || forced.has(path)) && !collapsed.has(path);
   const [menu, setMenu] = useState(null);
+  // Bumped by the Explorer header's New file / New folder buttons. A counter
+  // rather than a boolean, so pressing the same button twice in a row is two
+  // requests — with a flag the second press would be indistinguishable from
+  // the first still being set, and nothing would happen.
+  const [lastCreate, setLastCreate] = useState(create?.at ?? 0);
   // { kind: "newFile" | "newFolder", parent } | { kind: "rename", path }
   const [editing, setEditing] = useState(null);
   const [dragOver, setDragOver] = useState(null);
@@ -418,6 +424,24 @@ export default function FileTree({
     }
     setEditing(next);
   };
+
+  /*
+   * The header's buttons open the SAME inline input the context menu does.
+   *
+   * They could have called `onCreate` with a generated name, but then the two
+   * ways of making a file would behave differently — one asking, one not — and
+   * the header's would put an "untitled.md" in the tree for you to rename.
+   * Routing both through `startEdit` means there is one creation flow with two
+   * entry points.
+   *
+   * Adjusted during render rather than in an effect: an effect would paint one
+   * frame of the tree without the input, and the input is the entire response
+   * to the click.
+   */
+  if (create && create.at !== lastCreate) {
+    setLastCreate(create.at);
+    startEdit({ kind: create.kind, parent: create.parent });
+  }
 
   const commitEdit = (value) => {
     if (!editing) return;

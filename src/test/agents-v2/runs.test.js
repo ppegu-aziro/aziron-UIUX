@@ -12,7 +12,7 @@
 import { describe, expect, it } from "vitest";
 
 import { FIELDS, FILL_COUNTS, fieldAt, fillOf } from "@/data/agentJsonSchema";
-import { AGENTS_V2 } from "@/data/agentsV2";
+import { AGENTS_V2, KNOWLEDGE_SOURCES } from "@/data/agentsV2";
 import { AUTHORING, RECORD_EXAMPLES, SUGGESTIONS, chatRecipe, pickRecipe, retrieve } from "@/data/agentRuns";
 import {
   BEAT,
@@ -586,9 +586,22 @@ describe("stated values", () => {
   });
 
   it("routes each worked example to the recipe it is an example of", () => {
-    expect(pickRecipe("authoring", RECORD_EXAMPLES[0], WRITTEN).id).toBe("rename");
-    expect(pickRecipe("authoring", RECORD_EXAMPLES[1], WRITTEN).id).toBe("describe");
-    expect(pickRecipe("authoring", RECORD_EXAMPLES[2], WRITTEN).id).toBe("configure");
+    // Matched on content, not position — the examples are a list somebody will
+    // add to, and an index-based assertion silently tests the wrong pair when
+    // they do.
+    const expected = [
+      [/^call it/, "rename"],
+      [/^describe it/, "describe"],
+      [/^grant /, "grant-tools"],
+      [/^attach /, "attach-knowledge"],
+      [/^set temperature/, "configure"],
+    ];
+    expect(RECORD_EXAMPLES).toHaveLength(expected.length);
+    for (const prompt of RECORD_EXAMPLES) {
+      const want = expected.find(([re]) => re.test(prompt));
+      expect(want, `no expectation written for “${prompt}”`).toBeTruthy();
+      expect(pickRecipe("authoring", prompt, WRITTEN).id, prompt).toBe(want[1]);
+    }
   });
 
   it("every worked example really does state its value, or it teaches the wrong lesson", () => {
@@ -596,6 +609,125 @@ describe("stated values", () => {
       const events = compileRun(pickRecipe("authoring", prompt, WRITTEN), prompt, WRITTEN);
       const fills = events.filter((e) => e.t === "field");
       expect(fills.length, `${prompt} filled nothing`).toBeGreaterThan(0);
+    }
+  });
+});
+
+/* ── tools and knowledge ─────────────────────────────────────────────────── */
+
+describe("granting tools", () => {
+  const run = (prompt, rec = WRITTEN) => compileRun(pickRecipe("authoring", prompt, rec), prompt, rec);
+
+  it("grants exactly the tools that were named", () => {
+    const events = run("grant web_fetch and slack_post");
+    const fill = events.find((e) => e.t === "field" && e.path === "package.tools.granted");
+    expect(fill.value).toContain("web_fetch");
+    expect(fill.value).toContain("slack_post");
+    expect(fill.stated).toBe(true);
+  });
+
+  it("keeps what it already held rather than replacing the list", () => {
+    const events = run("grant web_fetch");
+    const fill = events.find((e) => e.t === "field" && e.path === "package.tools.granted");
+    for (const had of WRITTEN.granted) expect(fill.value).toContain(had);
+  });
+
+  it("verifies the claim against what was named, not the merged list", () => {
+    // The merged value contains tools the sentence never mentioned. If the
+    // check ran against the value it would reject a perfectly explicit request.
+    const events = run("grant web_fetch");
+    const fill = events.find((e) => e.t === "field" && e.path === "package.tools.granted");
+    expect(fill.value.length).toBeGreaterThan(fill.statedBy.length);
+    expect(fill.statedBy).toEqual(["web_fetch"]);
+  });
+
+  it("says which named tools are not real, instead of silently dropping them", () => {
+    const events = run("grant web_fetch and launch_missiles");
+    const note = events.find((e) => e.t === "step" && /launch_missiles/.test(e.label));
+    expect(note).toBeTruthy();
+    const fill = events.find((e) => e.t === "field" && e.path === "package.tools.granted");
+    expect(fill.value).not.toContain("launch_missiles");
+  });
+
+  it("asks rather than choosing when no tool is named", () => {
+    const events = run("give it some tools");
+    expect(events.some((e) => e.t === "field" && e.path === "package.tools.granted" && e.stated)).toBe(false);
+    const chip = events.find((e) => e.t === "propose" && e.id === "package.tools");
+    expect(chip).toBeTruthy();
+    expect(chip.pairs.map(([p]) => p)).toContain("package.tools.posture");
+  });
+
+  it("folds the grant into one chip on an agent that is not scoped yet", () => {
+    // `granted` is hidden until the posture is scoped, so writing it alone
+    // would be a change nobody could see. One click has to do both.
+    //
+    // NOT against BLANK: a blank agent routes to create-from-intent, which has
+    // a tools chip of its own — so this passed while grant-tools was dropping
+    // the grant entirely.
+    const unscoped = { ...WRITTEN, tools: "none", granted: [] };
+    const recipe = pickRecipe("authoring", "grant web_fetch", unscoped);
+    expect(recipe.id).toBe("grant-tools");
+
+    const events = compileRun(recipe, "grant web_fetch", unscoped);
+    expect(events.some((e) => e.t === "field" && e.path === "package.tools.granted")).toBe(false);
+    const chip = events.find((e) => e.t === "propose" && e.id === "package.tools");
+    expect(chip, "the grant had nowhere to land").toBeTruthy();
+    const paths = chip.pairs.map(([p]) => p);
+    expect(paths).toContain("package.tools.posture");
+    expect(paths).toContain("package.tools.granted");
+    expect(chip.pairs.find(([p]) => p === "package.tools.granted")[1]).toContain("web_fetch");
+  });
+
+  it("refuses to compile a recipe whose demoted field has no chip to land in", () => {
+    // The failure this replaces was silent: the run said "Granting web_fetch"
+    // and then granted nothing at all.
+    const orphan = {
+      id: "orphan",
+      build: () => [{ t: "field", path: "package.name", value: "X", into: "nowhere" }],
+    };
+    expect(() => compileRun(orphan, "x", WRITTEN)).toThrow(/never emits/);
+  });
+});
+
+describe("attaching knowledge", () => {
+  const run = (prompt, rec = WRITTEN) => compileRun(pickRecipe("authoring", prompt, rec), prompt, rec);
+
+  it("attaches the sources it was given, spelled as the catalogue spells them", () => {
+    const events = run("attach Benefits FAQ");
+    const fill = events.find((e) => e.t === "field" && e.path === "knowledge.sources");
+    expect(fill.value).toContain("Benefits FAQ");
+    // And keeps what was already attached.
+    expect(fill.value).toContain("Employee Handbook 2026");
+  });
+
+  it("attaches a database by the name people say, not the id it resolves to", () => {
+    const events = run("attach the Engineering vector database");
+    const fill = events.find((e) => e.t === "field" && e.path === "knowledge.vectorDb");
+    expect(fill.value).toBe("vdb-eng");
+    // The id is nowhere in that sentence — what was verified is the name.
+    expect(fill.statedBy).toBe("Engineering");
+  });
+
+  it("fills the collections alongside the database that gates them", () => {
+    const events = run("attach the Engineering vector database", { ...WRITTEN, vectorDbId: "vdb-eng" });
+    const cols = events.find((e) => e.t === "field" && e.path === "knowledge.collections");
+    expect(cols.value).toEqual(["runbooks", "adr", "postmortems"]);
+  });
+
+  it("lists what is available rather than picking, when nothing is named", () => {
+    const events = run("give it some knowledge");
+    expect(events.some((e) => e.t === "field")).toBe(false);
+    expect(events.filter((e) => e.t === "step").length).toBeGreaterThan(0);
+  });
+
+  it("never invents a source that is not in the catalogue", () => {
+    for (const prompt of ["attach the Employee Handbook 2026", "attach Nonexistent Corpus"]) {
+      const events = run(prompt);
+      const fill = events.find((e) => e.t === "field" && e.path === "knowledge.sources");
+      if (!fill) continue;
+      for (const name of fill.value) {
+        expect(KNOWLEDGE_SOURCES.some((s) => s.name === name), `invented ${name}`).toBe(true);
+      }
     }
   });
 });

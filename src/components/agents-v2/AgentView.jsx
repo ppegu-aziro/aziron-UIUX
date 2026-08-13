@@ -3,6 +3,8 @@ import {
   ArrowLeft,
   ChevronDown,
   ChevronRight,
+  FilePlus,
+  FolderPlus,
   Maximize2,
   Minimize2,
   Boxes,
@@ -130,6 +132,9 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
   // The settings path the assistant just filled, handed to the AGENT.json form
   // as its cursor so the control it changed is the one lit up.
   const [filled, setFilled] = useState(null);
+  // Requests from the Explorer header, handed to the tree so both ways of
+  // making a file open the same inline input.
+  const [create, setCreate] = useState({ kind: null, parent: "", at: 0 });
 
   const revealFile = (path) => {
     setRevealed((s) => (s.has(path) ? s : new Set(s).add(path)));
@@ -193,6 +198,19 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
   if (!agent || !activeFile) return null;
 
   const isEntry = activeFile.path === "AGENT.md";
+
+  /**
+   * Where the header's New file and New folder land.
+   *
+   * The folder holding whatever is open, which is what every editor does and
+   * what the labels on the buttons say out loud. Always creating at the top
+   * level would be simpler to explain and wrong most of the time — with
+   * `references/background.md` on screen, the next file nearly always belongs
+   * beside it, and a root-level file then has to be dragged.
+   */
+  const targetDir = activeFile.path.includes("/")
+    ? activeFile.path.slice(0, activeFile.path.lastIndexOf("/"))
+    : "";
   const isConfig = activeFile.path === AGENT_JSON_PATH;
   const isPrep = activeFile.path === PREPARATION_PATH;
   const content = buffer?.path === activeFile.path ? buffer.value : activeFile.content;
@@ -435,6 +453,38 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
                   </span>
                 </button>
 
+                {/*
+                  New file and new folder, where every editor puts them.
+                  Creating from the tree needs a row to point at first, which is
+                  the one thing you do not have when the folder you want to add
+                  to is empty — or when you have just arrived.
+
+                  They land beside whatever is open rather than always at the
+                  top level: with `references/background.md` on screen, the next
+                  file almost always belongs next to it, and the label says
+                  where it will go rather than making you find out.
+                */}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={targetDir ? `New file in ${targetDir}/` : "New file at the top level"}
+                  title={targetDir ? `New file in ${targetDir}/` : "New file at the top level"}
+                  onClick={() => setCreate((c) => ({ kind: "newFile", parent: targetDir, at: c.at + 1 }))}
+                >
+                  <FilePlus className="size-3" aria-hidden />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={targetDir ? `New folder in ${targetDir}/` : "New folder at the top level"}
+                  title={targetDir ? `New folder in ${targetDir}/` : "New folder at the top level"}
+                  onClick={() => setCreate((c) => ({ kind: "newFolder", parent: targetDir, at: c.at + 1 }))}
+                >
+                  <FolderPlus className="size-3" aria-hidden />
+                </Button>
+
                 <Button
                   type="button"
                   variant="ghost"
@@ -462,6 +512,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
                   files={files}
                   folders={agent.folders}
                   revealed={revealed}
+                  create={create}
                   activePath={activeFile.path}
                   onSelect={(p) => {
                     setActivePath(p);

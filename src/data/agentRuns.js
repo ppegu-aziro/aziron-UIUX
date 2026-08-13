@@ -15,7 +15,14 @@
  */
 
 import { SEED } from "@/data/preparationSchema";
-import { API_TOKENS, CATEGORIES, PROVIDERS } from "@/data/agentsV2";
+import {
+  ALL_TOOLS,
+  API_TOKENS,
+  CATEGORIES,
+  KNOWLEDGE_SOURCES,
+  PROVIDERS,
+  VECTOR_DBS,
+} from "@/data/agentsV2";
 import {
   done,
   field,
@@ -288,6 +295,9 @@ const addPreparation = {
  * for when the value contains the words that would otherwise end the phrase.
  * Then whatever follows the verb, up to a full stop.
  */
+/** Case and punctuation dropped, so a catalogue name matches how people type it. */
+const flatten = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
 const FILLER = /^(it|this|that|the agent|something|anything|whatever|please)$/i;
 
 const quotedOrAfter = (prompt, verbs) => {
@@ -366,6 +376,161 @@ const describe = {
   },
 };
 
+/* ── tools and knowledge ─────────────────────────────────────────────────── */
+
+/** Tool ids the prompt actually names, in catalogue order rather than typing order. */
+const toolsNamedIn = (prompt) => {
+  const p = String(prompt).toLowerCase();
+  return ALL_TOOLS.filter((t) => p.includes(t));
+};
+
+/** Sources the prompt names, matched on the catalogue's own spelling. */
+const sourcesNamedIn = (prompt) => {
+  const p = flatten(prompt);
+  return KNOWLEDGE_SOURCES.filter((s) => p.includes(flatten(s.name))).map((s) => s.name);
+};
+
+/**
+ * A database only counts as named when the sentence is about databases.
+ *
+ * The catalogue calls one of them "Engineering", which is also a category, a
+ * team and a word people use in passing — "add a reference file about
+ * engineering" is not a request to attach a vector store. So the name has to
+ * arrive with something that says which kind of thing is meant.
+ */
+const dbNamedIn = (prompt) => {
+  if (!/\bvector|database|\bdbs?\b|collections?\b/i.test(prompt)) return null;
+  const p = flatten(prompt);
+  return VECTOR_DBS.find((d) => p.includes(flatten(d.name)) || p.includes(flatten(d.id))) ?? null;
+};
+
+/** What a request implies when it names no tool at all. */
+const READ_ONLY = ["vector_search", "get_file_content"];
+
+const grantTools = {
+  id: "grant-tools",
+  title: "grant tools",
+  /*
+   * Decided by what the sentence NAMES, and only then by how it is worded.
+   *
+   * The two vocabularies overlap badly — "give it some knowledge" is a tool
+   * request by keyword and a corpus request by meaning, and `vector_search` is
+   * a tool whose name contains the other recipe's strongest keyword. So a
+   * named tool settles it outright, and the loose wording only applies when
+   * the sentence names no corpus to contradict it.
+   */
+  match: (prompt) =>
+    toolsNamedIn(prompt).length > 0 ||
+    (/\b(grant|tools?|permission|can call|let it (use|call|run))\b/.test(prompt) &&
+      !sourcesNamedIn(prompt).length &&
+      !dbNamedIn(prompt)),
+  build: (prompt, a) => {
+    const named = toolsNamedIn(prompt);
+    const already = a.tools === "scoped" ? (a.granted ?? []) : [];
+    const wanted = [...new Set([...already, ...(named.length ? named : READ_ONLY)])];
+    const unknown = (String(prompt).toLowerCase().match(/\b[a-z][a-z0-9]*_[a-z0-9_]+\b/g) ?? []).filter(
+      (w) => !ALL_TOOLS.includes(w),
+    );
+
+    /*
+     * Whether this can be set outright turns on the POSTURE, not on the words.
+     *
+     * `granted` is hidden by the schema until the posture is scoped, so on an
+     * agent that holds no tools there is nothing to fill — the list would be
+     * written where the form does not draw it and the next save would drop it.
+     * That case is a chip that does both in one click, and it is a chip even
+     * when the tools were named outright, because turning a no-tools agent into
+     * a tool-using one is a change of kind rather than a change of value.
+     */
+    const scoped = a.tools === "scoped";
+
+    return [
+      think(
+        named.length
+          ? `matching what you named against the ${ALL_TOOLS.length} tools in the catalogue`
+          : "no tool named — reading is the smallest useful grant",
+      ),
+      ...say(
+        !named.length
+          ? `You didn't name a tool, so I am not picking permissions for you. Here is the smallest grant that is actually useful — reading — as something to accept or ignore.`
+          : scoped
+            ? `Granting ${named.join(", ")}. You named ${named.length === 1 ? "it" : "them"}, so there is nothing for me to guess at — adding to what it already holds rather than replacing it.`
+            : `${named.join(", ")}, then. This agent holds no tools at all right now, so that is a change of kind rather than a value — one click below turns it on and grants exactly those.`,
+      ),
+      unknown.length
+        ? step("wrench", unknown.join(", "), `not in the catalogue, so ${unknown.length === 1 ? "it was" : "they were"} left out`)
+        : null,
+      // Already scoped and named outright: the user's own words, set rather
+      // than asked about.
+      scoped && named.length ? field("package.tools.granted", wanted, { stated: true, statedBy: named }) : null,
+      scoped && named.length
+        ? null
+        : propose(
+            "package.tools",
+            named.length ? `Grant ${named.join(" and ")}` : `Scope it to ${READ_ONLY.join(" and ")}`,
+            named.length
+              ? `switches it from “${a.tools}” to a scoped allow-list holding exactly ${named.length === 1 ? "that one" : `those ${named.length}`}`
+              : "it can read, and nothing else",
+            [
+              ["package.tools.posture", "scoped"],
+              ["package.tools.granted", named.length ? wanted : READ_ONLY],
+            ],
+          ),
+      done(
+        `Tools are an Aziron-side grant: they say what this agent may call while it runs here. A released copy gets whatever its host allows instead, so this list does not travel with it.`,
+      ),
+    ];
+  },
+};
+
+const attachKnowledge = {
+  id: "attach-knowledge",
+  title: "attach knowledge",
+  match: (prompt) =>
+    sourcesNamedIn(prompt).length > 0 ||
+    Boolean(dbNamedIn(prompt)) ||
+    (/\b(knowledge|hub|corpus|attach|retriev|rag|index)\b/.test(prompt) && !toolsNamedIn(prompt).length),
+  build: (prompt, a) => {
+    const named = sourcesNamedIn(prompt);
+    const db = dbNamedIn(prompt);
+    const already = a.knowledge ?? [];
+    const wanted = [...new Set([...already, ...named])];
+
+    if (!named.length && !db) {
+      return [
+        think(`${KNOWLEDGE_SOURCES.length} hubs and ${VECTOR_DBS.length} databases are available here`),
+        ...say(
+          `Nothing in that names one of them, and attaching a corpus decides what this agent can read — so I will not pick. Name one and I will attach it.`,
+        ),
+        ...KNOWLEDGE_SOURCES.slice(0, 4).map((s) => step("book", s.name, s.meta)),
+        done("Say the name as it appears above and I will attach it outright, without asking twice."),
+      ];
+    }
+
+    return [
+      think("attaching reads it into this workspace only — it does not travel in a release"),
+      ...say(
+        named.length
+          ? `Attaching ${named.join(" and ")}.${already.length ? " Keeping what was already there." : ""}`
+          : `Attaching the ${db.name} database.`,
+      ),
+      ...named.map((n) => {
+        const meta = KNOWLEDGE_SOURCES.find((s) => s.name === n);
+        return step("book", n, meta?.meta ?? "");
+      }),
+      named.length ? field("knowledge.sources", wanted, { stated: true, statedBy: named }) : null,
+      db ? step("book", db.name, `${db.collections.length} collections`) : null,
+      db ? field("knowledge.vectorDb", db.id, { stated: true, statedBy: db.name }) : null,
+      // Gated on a database existing, so on an agent without one this rides
+      // along with the database rather than being written where nothing shows it.
+      db ? field("knowledge.collections", db.collections, { into: "knowledge" }) : null,
+      done(
+        "Attached inside Aziron only. A released copy has no access to any of this — it reads the files in its own folder, which is why those matter more than this list does.",
+      ),
+    ];
+  },
+};
+
 /** Numbers people actually type, with the units they type them in. */
 const numberFor = (prompt, re) => {
   const hit = re.exec(prompt);
@@ -402,9 +567,18 @@ const configure = {
       temp == null && mood != null ? field("runtime.temperature", mood, { into: "runtime" }) : null,
     ].filter(Boolean);
 
-    const wantsModel = /\buse (anthropic|openai)|model|bind\b/.test(p);
     const provider = providerFrom(p);
     const model = modelFrom(p);
+    /*
+     * The chip is offered whenever a model is asked for — and ALSO whenever
+     * there is no runtime at all, because every field above is gated on one.
+     *
+     * Without that second condition "set temperature to 0.1" on an unbound
+     * agent demotes both numbers into a proposal this recipe never emits, and
+     * they vanish while the run says it set them. compileRun refuses to build
+     * that now, which is how this was found.
+     */
+    const wantsModel = /\buse (anthropic|openai)|model|bind\b/.test(p) || !a.runtime;
 
     return [
       think("this one only touches settings — no files change"),
@@ -484,6 +658,10 @@ export const AUTHORING = [
   // record, and both contain words the looser file matchers would claim.
   rename,
   describe,
+  // And before `configure`, whose "model" and "set up for" both appear in
+  // sentences that are really about tools or a corpus.
+  grantTools,
+  attachKnowledge,
   configure,
   addReference,
   addScript,
@@ -510,6 +688,8 @@ export const SUGGESTIONS = [
 export const RECORD_EXAMPLES = [
   'call it "Leave Desk"',
   'describe it as "answers leave and benefits questions from the handbook"',
+  "grant vector_search and web_fetch",
+  "attach Employee Handbook 2026 and Benefits FAQ",
   "set temperature to 0.1 and max iterations to 4",
 ];
 

@@ -24,24 +24,31 @@ import EditorSuggest from "./EditorSuggest";
  * worse than the original mistake.
  *
  * The one rule that keeps the modes honest: while the text does not parse, the
- * Form tab is disabled with the reason on it. The form renders from the record
+ * Fields tab is disabled with the reason on it. The form renders from the record
  * and would still work, but reaching it would leave broken text sitting behind
  * a committed edit with no way to tell which the file is. The textarea itself is
  * never blocked — you are always free to keep typing your way out.
  */
 
 /**
- * Named for what you get, not for how it is rendered.
+ * Two views of one file, and then both at once.
  *
- * "Form / Split / JSON" described the machinery: two of the three were words
- * about layout and none said what you would be looking at. "Settings" is the
- * thing a person came here to change, and "JSON" is safe to say because the
- * file is named agent.json one row above — the word is already on screen.
+ * This was "Settings", which is the name of a different thing three feet away:
+ * the sheet behind the Model & tools half, which holds runtime configuration
+ * that never enters this file. Two controls called Settings, showing different
+ * fields, on the same screen — the reader has to open both to find out which
+ * one they wanted, and the wrong guess is silent.
+ *
+ * So it is named for the shape it puts the file in. "Fields" and "JSON" are
+ * plainly the same document rendered two ways, which is the fact worth
+ * conveying, and Both is last because it is the two of them together — the
+ * order now reads as a sequence rather than as a list with the compound in the
+ * middle.
  */
 const MODES = [
-  { id: "form", label: "Settings", icon: SlidersHorizontal, hint: "Edit with controls" },
-  { id: "split", label: "Both", icon: Columns2, hint: "Controls beside the file" },
-  { id: "json", label: "JSON", icon: Braces, hint: "Edit the file directly" },
+  { id: "form", label: "Fields", icon: SlidersHorizontal, hint: "The file, as controls" },
+  { id: "json", label: "JSON", icon: Braces, hint: "The file, as text" },
+  { id: "split", label: "Both", icon: Columns2, hint: "Controls beside the text" },
 ];
 
 /** Plain sentences, each with its repair. */

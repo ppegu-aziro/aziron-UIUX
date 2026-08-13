@@ -18,9 +18,9 @@ import EditorSuggest from "./EditorSuggest";
  * `.aziron/preparation.yaml`, read two ways.
  *
  * Setup resolves the document for one machine at a time; YAML is where it is
- * written. Unlike agent.json's Settings pane this one commits nothing — see
+ * written. Unlike agent.json's Fields pane this one commits nothing — see
  * PreparationSetup for why a resolved row has no unambiguous place to write
- * back to — so the two are not peers in the way Settings and JSON are, and
+ * back to — so the two are not peers in the way Fields and JSON are, and
  * Both is the default because the pairing is what makes the left pane legible.
  *
  * Called Setup rather than Preview, Plan or Readiness. Preview is burned in

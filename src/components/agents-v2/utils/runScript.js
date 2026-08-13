@@ -167,9 +167,21 @@ export const BEAT = {
  */
 export function compileRun(recipe, prompt, agent) {
   const raw = recipe.build(prompt, agent) ?? [];
-  const ctx = { doc: toDoc(agent), agent };
   const out = [];
   const deferred = new Map();
+
+  /*
+   * Visibility is judged against the record as the run will have left it, not
+   * as it found it.
+   *
+   * A run that sets a vector database and then its collections is two fills,
+   * and the second is gated on the first. Judged against the untouched record
+   * the gate is shut, the collections are demoted into a proposal nobody asked
+   * for, and the database arrives with an empty list beside it. So each fill
+   * that survives is applied to a running copy, which is exactly what the
+   * player will do to the real one a moment later.
+   */
+  let so_far = agent;
 
   for (const ev of raw) {
     if (!ev) continue;
@@ -181,22 +193,41 @@ export function compileRun(recipe, prompt, agent) {
     if (!spec) throw new Error(`recipe "${recipe.id}": no such field "${ev.path}"`);
     if (spec.fill === "never") throw new Error(`recipe "${recipe.id}": "${ev.path}" is fill:never`);
 
-    if (ev.stated && !statedIn(prompt, ev.value)) {
+    // `statedBy` exists because a value is not always the words that justify
+    // it: somebody naming "Engineering" is choosing the database whose id is
+    // `vdb-eng`, and checking the id against the prompt would reject a request
+    // that was perfectly explicit. What is verified is the claim — that the
+    // user named this thing — not the internal value it resolves to.
+    if (ev.stated && !statedIn(prompt, ev.statedBy ?? ev.value)) {
       throw new Error(`recipe "${recipe.id}": "${ev.path}" claims to be stated but is not in the prompt`);
     }
 
-    const visible = !spec.when || spec.when(ctx);
+    const visible = !spec.when || spec.when({ doc: toDoc(so_far), agent: so_far });
     if ((spec.fill === "auto" || ev.stated) && visible) {
-      out.push({ ...ev, was: spec.read(agent), label: spec.label });
+      out.push({ ...ev, was: spec.read(so_far), label: spec.label });
+      so_far = { ...so_far, ...spec.write(ev.value, so_far) };
       continue;
     }
     const into = ev.into ?? spec.section;
     deferred.set(into, [...(deferred.get(into) ?? []), [ev.path, ev.value]]);
   }
 
+  const chips = new Set(out.filter((e) => e.t === "propose").map((e) => e.id));
+  for (const id of deferred.keys()) {
+    // A demoted field with nowhere to go is dropped in silence: the run says it
+    // is doing something and then does not, which is the worst failure this
+    // file can have. It is a recipe bug, so it fails where recipe bugs are
+    // caught — at compile time, in the sweep.
+    if (!chips.has(id)) {
+      const paths = deferred.get(id).map(([p]) => p).join(", ");
+      throw new Error(`recipe "${recipe.id}": ${paths} defer into proposal "${id}", which it never emits`);
+    }
+  }
+
   return out.map((ev) => {
     if (ev.t !== "propose" || !deferred.has(ev.id)) return ev;
-    const extra = deferred.get(ev.id);
+    const extra = deferred.get(ev.id).filter(([p]) => !ev.pairs.some(([q]) => q === p));
+    if (!extra.length) return ev;
     const names = extra.map(([p]) => fieldAt(p).label.toLowerCase()).join(", ");
     return { ...ev, pairs: [...ev.pairs, ...extra], note: `${ev.note} · ${names} ride along` };
   });
