@@ -65,6 +65,22 @@ import Resizer from "./Resizer";
  * true rather than a sync promise you have to trust.
  */
 
+/**
+ * Shown on hover, and on three other conditions that stop that being a trap.
+ *
+ * Keyboard focus reveals them, so tabbing to a control you cannot see is not
+ * how anybody finds out they exist. `hover: none` shows them permanently,
+ * because a touch device never produces the hover that would — and a button
+ * that is invisible AND unreachable is just a missing feature.
+ *
+ * `opacity` rather than `hidden`: the row must not change width when the
+ * pointer crosses it, or the Explorer heading twitches sideways every time you
+ * reach for the tree.
+ */
+const REVEAL =
+  "opacity-0 transition-opacity group-hover/explorer:opacity-100 focus-visible:opacity-100 " +
+  "group-focus-within/explorer:opacity-100 [@media(hover:none)]:opacity-100";
+
 /** The folder contract, taught as a placeholder: never saved, never released. */
 const SCAFFOLD = `#
 One sentence on what this agent does.
@@ -147,6 +163,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
     setFilled(path);
   };
 
+
   // The folder as the user sees it: the agent's own files plus the generated
   // AGENT.json. Everything that lists, resolves or completes a path reads this
   // rather than the raw record.
@@ -156,6 +173,37 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
     () => files.find((f) => f.path === activePath) ?? files[0],
     [files, activePath],
   );
+  /*
+   * Follow the writing, without taking the keyboard.
+   *
+   * Every one of these SCROLLS and none of them calls focus(). A run is several
+   * seconds long and the user is invited to edit during it — moving focus would
+   * pull the caret out of whatever they were typing, mid-word, repeatedly. So
+   * the rule is: the thing being changed is brought on screen, and the pointer
+   * and keyboard stay where the person put them.
+   */
+  const treeRef = useRef(null);
+
+  useEffect(() => {
+    // Instant, deliberately. A tree row is a few pixels of movement, and a
+    // smooth scroll needs animation frames — which a page that is not
+    // compositing never produces, so in a background tab the row would simply
+    // never arrive.
+    treeRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+  }, [activePath]);
+
+  const written = activeFile?.content ?? "";
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    // Only when the assistant is the one writing. While the user is typing
+    // into this file the buffer owns it, and yanking the scroll under their
+    // caret is the one thing this must never do.
+    if (buffer?.path === activeFile?.path) return;
+    // And only if they are already near the end. Somebody who scrolled up to
+    // read the top of a file scrolled up on purpose.
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 120) el.scrollTop = el.scrollHeight;
+  }, [written, activeFile?.path, buffer?.path]);
 
   /**
    * Commit whatever is buffered, now.
@@ -422,7 +470,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
                 focus === "folder" ? "lg:w-full" : "lg:border-r",
               )}
             >
-              <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
+              <div className="group/explorer flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
                 {/*
                   "Explorer", not "Folder": the column beside it is headed with
                   a file path, so this one should name the panel rather than the
@@ -468,6 +516,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
                   type="button"
                   variant="ghost"
                   size="icon-sm"
+                  className={REVEAL}
                   aria-label={targetDir ? `New file in ${targetDir}/` : "New file at the top level"}
                   title={targetDir ? `New file in ${targetDir}/` : "New file at the top level"}
                   onClick={() => setCreate((c) => ({ kind: "newFile", parent: targetDir, at: c.at + 1 }))}
@@ -478,6 +527,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
                   type="button"
                   variant="ghost"
                   size="icon-sm"
+                  className={REVEAL}
                   aria-label={targetDir ? `New folder in ${targetDir}/` : "New folder at the top level"}
                   title={targetDir ? `New folder in ${targetDir}/` : "New folder at the top level"}
                   onClick={() => setCreate((c) => ({ kind: "newFolder", parent: targetDir, at: c.at + 1 }))}
@@ -503,6 +553,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
               </div>
               <div
                 id="agent-file-tree"
+                ref={treeRef}
                 className={cn(
                   "flex-1 flex-col overflow-y-auto p-2",
                   treeOpen ? "flex" : "hidden lg:flex",

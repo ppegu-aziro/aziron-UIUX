@@ -12,7 +12,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { GROUPS, SECTIONS, fieldsInGroup, sectionOfGroup } from "@/data/agentJsonSchema";
+import { GROUPS, SECTIONS, fieldAt, fieldsInGroup, sectionOfGroup } from "@/data/agentJsonSchema";
 import { changedPaths, toDoc } from "./utils/agentJson";
 import { Section } from "./utils/formControls";
 import SchemaField from "./SchemaField";
@@ -85,6 +85,84 @@ export default function AgentJsonForm({ agent, onlyChanged, onShowAll, onEdit, o
   })).filter((g) => g.fields.length > 0);
 
   const ids = shown.map((g) => g.id).join(",");
+
+  /*
+   * A field in the collapsed advanced tier has no card to scroll to.
+   *
+   * Temperature and the two limits sit behind "4 more settings", so the
+   * assistant filling one moved the editor to this file and then highlighted
+   * nothing — the change was real, invisible, and looked like a bug in the
+   * thing that made it. Opening the group is the right response: hiding a value
+   * because it is advanced is a rule about BROWSING, and this is not browsing,
+   * it is being shown something that just changed.
+   *
+   * Adjusted during render rather than in an effect, both because the rules
+   * forbid the effect and because an effect would paint one frame of a
+   * highlight pointing at a card that is not there yet.
+   */
+  // Seeded null, not from the prop: this form is usually mounted BY the fill it
+  // is announcing, so on the first render the cursor is already set and there
+  // is no later change to react to. Seeding from the prop makes the first fill
+  // the one case that never opens its group.
+  const [lastCursor, setLastCursor] = useState(null);
+  if (cursorPath !== lastCursor) {
+    setLastCursor(cursorPath);
+    const spec = cursorPath ? fieldAt(cursorPath) : null;
+    if (spec?.tier === "advanced" && !expanded.has(spec.group)) {
+      setExpanded((s) => new Set(s).add(spec.group));
+    }
+  }
+
+  /*
+   * A control somebody else changed has to be on screen to have been seen.
+   *
+   * The assistant fills a field, the editor switches to this file, and the
+   * highlight lands three groups below the fold — a highlight nobody ever sees.
+   * `nearest` rather than `center`: a control already visible must not be
+   * shuffled to the middle, because the form lurching on every fill is worse
+   * than the fill being missed.
+   *
+   * The scroll-spy is suppressed while this runs, or it lights up whichever
+   * group the scroll passed through on the way.
+   */
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!root || !cursorPath) return undefined;
+
+    /*
+     * Deferred by a timer, NOT by requestAnimationFrame.
+     *
+     * The deferral is needed at all because a fill into the advanced tier opens
+     * its group in the same pass that moves the cursor, so measuring the card
+     * immediately reads the layout from before the group grew. rAF is the
+     * obvious way to wait for that and is the wrong one here: its callbacks do
+     * not run while the page is not compositing — a background tab, a hidden
+     * window — so the scroll would simply never happen, and would then happen
+     * all at once when the tab was brought forward.
+     *
+     * Keyed on `expanded` as well as the path, so opening the group re-aims it.
+     */
+    let done = 0;
+    const timer = setTimeout(() => {
+      const el = root.querySelector(`[data-path="${cursorPath}"]`);
+      if (!el) return;
+      // Only when it is actually off screen. A control already in front of you
+      // must not be shuffled, or the form lurches on every fill of a run.
+      const top = el.offsetTop;
+      if (top >= root.scrollTop && top + el.offsetHeight <= root.scrollTop + root.clientHeight) return;
+      const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      jumping.current = true;
+      root.scrollTo({ top: Math.max(0, top - 8), behavior: still ? "auto" : "smooth" });
+      done = setTimeout(() => {
+        jumping.current = false;
+      }, 400);
+    }, 0);
+
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(done);
+    };
+  }, [cursorPath, expanded]);
 
   /**
    * Which group is being read: the last one whose heading has passed a line a
@@ -280,6 +358,7 @@ export default function AgentJsonForm({ agent, onlyChanged, onShowAll, onEdit, o
                   {specs.map((spec) => (
                     <div
                       key={spec.path}
+                      data-path={spec.path}
                       className={cn(
                         "min-w-0 rounded-lg border p-2.5 transition-colors",
                         SPAN[spec.width ?? "md"],

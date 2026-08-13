@@ -111,7 +111,16 @@ export default function AgentJsonView({
   const [onlyChanged, setOnlyChanged] = useState(false);
   // One dotted path, shared by both panes — the thing that makes them read as
   // one editor rather than two views of a file.
-  const [cursorPath, setCursorPath] = useState(null);
+  /*
+   * Seeded from the prop, not from null.
+   *
+   * This pane is usually MOUNTED by the fill it is meant to be announcing: the
+   * assistant sets a field, which switches the editor to this file, so the
+   * component's first render already has the path. Starting the cursor at null
+   * and waiting for a change meant the very case this exists for — the first
+   * fill — was the one case it never caught, and every later fill worked.
+   */
+  const [cursorPath, setCursorPath] = useState(focusPath ?? null);
 
   /*
    * The assistant filling a field moves the cursor to it, once.
