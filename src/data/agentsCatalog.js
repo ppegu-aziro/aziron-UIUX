@@ -67,9 +67,11 @@ function migrateStoredAgent(stored) {
     (stored.visibility === "public" ? "org" : "private");
   const knowledgeHubs = migrateKnowledgeHubIds(stored.knowledgeHubs ?? seed?.knowledgeHubs);
   return {
-    labels: seed?.labels ?? [],   // backfill labels from seed if not yet stored
     ...stored,                    // stored values always win
-    labels: stored.labels ?? seed?.labels ?? [],  // explicit override to handle undefined
+    // After the spread, because a stored agent from before labels existed
+    // carries the key with `undefined`, and a spread of that would overwrite
+    // a default set ahead of it.
+    labels: stored.labels ?? seed?.labels ?? [],
     knowledgeHubs,
     publishScope,
     visibility: publishScope === "private" ? "private" : "public",
