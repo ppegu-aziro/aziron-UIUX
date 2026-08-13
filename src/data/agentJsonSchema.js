@@ -166,6 +166,7 @@ export const FIELDS = [
   /* ── package ───────────────────────────────────────────────────────────── */
   {
     path: "package.name",
+    fill: "propose",
     group: "general",
     width: "md",
     label: "Name",
@@ -183,6 +184,7 @@ export const FIELDS = [
   },
   {
     path: "package.description",
+    fill: "auto",
     group: "general",
     width: "md",
     label: "Description",
@@ -197,6 +199,7 @@ export const FIELDS = [
   },
   {
     path: "package.category",
+    fill: "auto",
     group: "general",
     width: "sm",
     label: "Category",
@@ -223,6 +226,7 @@ export const FIELDS = [
   },
   {
     path: "package.targets",
+    fill: "propose",
     group: "general",
     width: "md",
     label: "Installs into",
@@ -260,6 +264,7 @@ export const FIELDS = [
   },
   {
     path: "package.tools.posture",
+    fill: "propose",
     group: "tools",
     width: "sm",
     label: "Tool access",
@@ -300,6 +305,7 @@ export const FIELDS = [
   },
   {
     path: "package.tools.granted",
+    fill: "propose",
     group: "tools",
     width: "lg",
     label: "Granted tools",
@@ -345,6 +351,7 @@ export const FIELDS = [
   },
   {
     path: "package.version",
+    fill: "never",
     group: "general",
     width: "sm",
     label: "Version",
@@ -362,6 +369,7 @@ export const FIELDS = [
   /* ── runtime ───────────────────────────────────────────────────────────── */
   {
     path: "runtime.provider",
+    fill: "propose",
     group: "model",
     width: "md",
     label: "Provider",
@@ -412,6 +420,7 @@ export const FIELDS = [
   },
   {
     path: "runtime.model",
+    fill: "propose",
     group: "model",
     width: "md",
     label: "Model",
@@ -455,6 +464,7 @@ export const FIELDS = [
   },
   {
     path: "runtime.apiToken",
+    fill: "never",
     group: "model",
     width: "md",
     label: "API token",
@@ -488,6 +498,7 @@ export const FIELDS = [
   },
   {
     path: "runtime.temperature",
+    fill: "auto",
     group: "model",
     width: "sm",
     label: "Temperature",
@@ -516,6 +527,7 @@ export const FIELDS = [
   },
   {
     path: "runtime.maxTokens",
+    fill: "auto",
     group: "model",
     width: "sm",
     label: "Max tokens",
@@ -534,6 +546,7 @@ export const FIELDS = [
   },
   {
     path: "runtime.maxIterations",
+    fill: "auto",
     group: "model",
     width: "sm",
     label: "Max iterations",
@@ -554,6 +567,7 @@ export const FIELDS = [
   /* ── knowledge ─────────────────────────────────────────────────────────── */
   {
     path: "knowledge.sources",
+    fill: "propose",
     group: "knowledge",
     width: "md",
     label: "Sources",
@@ -572,6 +586,7 @@ export const FIELDS = [
   },
   {
     path: "knowledge.vectorDb",
+    fill: "propose",
     group: "knowledge",
     width: "md",
     label: "Vector database",
@@ -601,6 +616,7 @@ export const FIELDS = [
   },
   {
     path: "knowledge.collections",
+    fill: "auto",
     group: "knowledge",
     width: "lg",
     label: "Collections",
@@ -647,6 +663,7 @@ export const FIELDS = [
   },
   {
     path: "knowledge.ragMode",
+    fill: "auto",
     group: "knowledge",
     width: "sm",
     label: "RAG mode",
@@ -669,6 +686,7 @@ export const FIELDS = [
   },
   {
     path: "knowledge.vectorSearch",
+    fill: "auto",
     group: "knowledge",
     width: "sm",
     label: "Vector search",
@@ -685,6 +703,7 @@ export const FIELDS = [
   /* ── chat ──────────────────────────────────────────────────────────────── */
   {
     path: "chat.quickPrompts",
+    fill: "auto",
     group: "chat",
     width: "lg",
     label: "Quick prompts",
@@ -721,6 +740,7 @@ export const FIELDS = [
   /* ── workspace ─────────────────────────────────────────────────────────── */
   {
     path: "workspace.status",
+    fill: "never",
     group: "workspace",
     width: "sm",
     label: "Status",
@@ -747,6 +767,7 @@ export const FIELDS = [
   },
   {
     path: "workspace.visibility",
+    fill: "never",
     group: "workspace",
     width: "sm",
     label: "Visibility",
@@ -781,6 +802,37 @@ const BY_PATH = new Map(FIELDS.map((f) => [f.path, f]));
 
 /** @returns {FieldSpec|null} */
 export const fieldAt = (path) => BY_PATH.get(path) ?? null;
+
+/**
+ * How much a generator is allowed to touch a field, without being asked twice.
+ *
+ * `auto`    fills itself. Reversible in one click, visible in a surface already
+ *           on screen, and confined to this workspace — a released copy ignores
+ *           it entirely.
+ * `propose` arrives complete but waits for a click. Everything that names the
+ *           agent, grants a permission, binds a credential, attaches an org
+ *           corpus or decides where it installs.
+ * `never`   is not a generator's to set. A version comes from releasing, a
+ *           token comes from choosing a provider, and status and visibility are
+ *           claims about the world rather than about the file.
+ *
+ * The policy lives HERE, on the spec, beside the `write` it governs — not in a
+ * list inside whatever is doing the generating. A field added to this array is
+ * uncovered until somebody classifies it, and the test suite fails until they
+ * do; a deny-list in the generator would instead default the new field to
+ * fillable and say nothing.
+ */
+export const fillOf = (path) => fieldAt(path)?.fill ?? "never";
+
+/**
+ * How many fields sit in each class. Derived, because the assistant states
+ * these numbers to the user and a hand-written count goes stale the first time
+ * somebody adds a field.
+ */
+export const FILL_COUNTS = FIELDS.reduce(
+  (acc, f) => ({ ...acc, [f.fill]: (acc[f.fill] ?? 0) + 1 }),
+  { auto: 0, propose: 0, never: 0 },
+);
 
 /** Fields belonging to a section, in document order. */
 export const fieldsIn = (section) => FIELDS.filter((f) => f.section === section);

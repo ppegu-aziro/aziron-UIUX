@@ -122,6 +122,26 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
   const flushRef = useRef(null);
   const textareaRef = useRef(null);
 
+  // Paths the assistant created during this session. The tree keeps their
+  // folders open — `expanded` is seeded once at mount, so a folder that arrives
+  // later stays shut and hides the file inside it, which is most of what there
+  // was to see.
+  const [revealed, setRevealed] = useState(() => new Set());
+  // The settings path the assistant just filled, handed to the AGENT.json form
+  // as its cursor so the control it changed is the one lit up.
+  const [filled, setFilled] = useState(null);
+
+  const revealFile = (path) => {
+    setRevealed((s) => (s.has(path) ? s : new Set(s).add(path)));
+    setActivePath(path);
+  };
+
+  /** A fill is only worth showing where it lands, so the editor goes there. */
+  const revealField = (path) => {
+    setActivePath(AGENT_JSON_PATH);
+    setFilled(path);
+  };
+
   // The folder as the user sees it: the agent's own files plus the generated
   // AGENT.json. Everything that lists, resolves or completes a path reads this
   // rather than the raw record.
@@ -441,6 +461,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
                 <FileTree
                   files={files}
                   folders={agent.folders}
+                  revealed={revealed}
                   activePath={activeFile.path}
                   onSelect={(p) => {
                     setActivePath(p);
@@ -469,7 +490,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
         )}
 
         {focus !== "folder" && focus !== "assistant" && (
-          <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", assist && "hidden lg:flex")}>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
               <span className="truncate font-mono text-[11px] text-muted-foreground">
                 {activeFile.path}
@@ -551,6 +572,7 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
                 onEditField={editConfigField}
                 onApplyPatch={applyConfigPatch}
                 onFlush={saveNow}
+                focusPath={filled}
               />
             ) : (
               <>
@@ -603,7 +625,15 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
           </div>
         )}
 
-        {assist && focus !== "folder" && focus !== "editor" && (
+        {/*
+          Rendered whenever the assistant is open, and HIDDEN rather than
+          unmounted for the two focus modes that used to drop it. Clicking
+          "Focus the editor" while files are landing is the single most likely
+          gesture in the whole panel, and unmounting killed the run producing
+          them — the transcript lives in the panel's own state, so restoring the
+          layout brought back an empty one.
+        */}
+        {assist && (
           <>
             {focus === null && (
               <Resizer
@@ -616,14 +646,19 @@ export default function AgentView({ agentId, onBack, onDistribute, onChat }) {
               className={cn(
                 "flex min-h-0 w-full min-w-0 shrink-0 flex-col",
                 focus === "assistant" ? "lg:w-full lg:flex-1" : "lg:border-l lg:border-border",
+                (focus === "folder" || focus === "editor") && "hidden",
               )}
             >
               <AssistantPanel
+                key={agent.id}
                 agent={agent}
                 onClose={() => setAssist(false)}
                 embedded
                 focused={focus === "assistant"}
                 onToggleFocus={() => setFocus(focus === "assistant" ? null : "assistant")}
+                onOpenFile={revealFile}
+                onFocusField={revealField}
+                claims={buffer && !buffer.committed ? buffer.path : null}
               />
             </div>
           </>

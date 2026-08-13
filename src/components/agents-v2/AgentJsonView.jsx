@@ -98,12 +98,28 @@ export default function AgentJsonView({
   onEditField,
   onApplyPatch,
   onFlush,
+  focusPath,
 }) {
   const [mode, setMode] = useState("form");
   const [onlyChanged, setOnlyChanged] = useState(false);
   // One dotted path, shared by both panes — the thing that makes them read as
   // one editor rather than two views of a file.
   const [cursorPath, setCursorPath] = useState(null);
+
+  /*
+   * The assistant filling a field moves the cursor to it, once.
+   *
+   * Adjusted during render rather than in an effect: an effect would paint the
+   * form with the old control lit and then correct it, and the fill it is
+   * announcing takes 320ms — long enough for that flicker to be the thing you
+   * notice. Clicking a different control afterwards still wins, because this
+   * only fires on the frame the prop actually changes.
+   */
+  const [lastFocus, setLastFocus] = useState(focusPath);
+  if (focusPath !== lastFocus) {
+    setLastFocus(focusPath);
+    if (focusPath) setCursorPath(focusPath);
+  }
   // Settled separately from the text: the editor's autosave lands mid-edit
   // constantly, and a strip that flickers on normal typing is one people learn
   // to ignore.

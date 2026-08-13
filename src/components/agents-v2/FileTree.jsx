@@ -34,6 +34,15 @@ import { SEED } from "@/data/preparationSchema";
  * the stored paths and the displayed tree disagreeing.
  */
 
+/** Stable identity, so an absent prop does not rebuild the forced set each render. */
+const EMPTY = new Set();
+
+/** Every directory on the way to each path. `a/b/c.md` → `a`, `a/b`. */
+const ancestorsOf = (paths) =>
+  paths.flatMap((p) =>
+    p.split("/").slice(0, -1).map((_, i, arr) => arr.slice(0, i + 1).join("/")),
+  );
+
 function buildTree(files, folders) {
   const root = { name: "", path: "", dir: true, children: new Map() };
 
@@ -213,7 +222,7 @@ function Node({
   setDragOver,
   onDropInto,
 }) {
-  const isOpen = expanded.has(node.path);
+  const isOpen = expanded(node.path);
   const isRenaming = editing?.kind === "rename" && editing.path === node.path;
   const isDropTarget = node.dir && dragOver === node.path;
 
@@ -351,6 +360,7 @@ function Node({
 export default function FileTree({
   files,
   folders = [],
+  revealed = EMPTY,
   activePath,
   onSelect,
   onAction,
@@ -360,14 +370,23 @@ export default function FileTree({
   onMove,
 }) {
   const tree = useMemo(() => buildTree(files, folders), [files, folders]);
-  const [expanded, setExpanded] = useState(
-    () =>
-      new Set(
-        files.flatMap((f) =>
-          f.path.split("/").slice(0, -1).map((_, i, arr) => arr.slice(0, i + 1).join("/")),
-        ),
-      ),
-  );
+  const [expanded, setExpanded] = useState(() => new Set(ancestorsOf(files.map((f) => f.path))));
+  // Folders the reader shut by hand. Kept separately so a closed folder stays
+  // closed even when something arrives inside it — otherwise the assistant
+  // reopens a folder you deliberately collapsed, every time it writes.
+  const [collapsed, setCollapsed] = useState(() => new Set());
+
+  /**
+   * A folder arriving mid-session has to open itself.
+   *
+   * `expanded` is seeded once, at mount, from the files that existed then. A
+   * folder the assistant creates a moment later is therefore shut, and the file
+   * it was created to hold is invisible — which is most of what there was to
+   * watch. Derived during render rather than synced by an effect, so there is
+   * no frame where the file exists and its folder is closed.
+   */
+  const forced = useMemo(() => new Set(ancestorsOf([...revealed])), [revealed]);
+  const isOpen = (path) => (expanded.has(path) || forced.has(path)) && !collapsed.has(path);
   const [menu, setMenu] = useState(null);
   // { kind: "newFile" | "newFolder", parent } | { kind: "rename", path }
   const [editing, setEditing] = useState(null);
@@ -375,18 +394,28 @@ export default function FileTree({
 
   const taken = useMemo(() => files.map((f) => f.path).concat(folders), [files, folders]);
 
-  const toggle = (path) =>
+  const toggle = (path) => {
+    const open = isOpen(path);
     setExpanded((s) => {
       const next = new Set(s);
-      next.has(path) ? next.delete(path) : next.add(path);
+      open ? next.delete(path) : next.add(path);
       return next;
     });
+    setCollapsed((s) => {
+      const next = new Set(s);
+      open ? next.add(path) : next.delete(path);
+      return next;
+    });
+  };
 
   const startEdit = (next) => {
     setMenu(null);
     // Creating inside a collapsed folder would put the input somewhere you
     // cannot see, so open it first.
-    if (next.parent) setExpanded((s) => new Set(s).add(next.parent));
+    if (next.parent) {
+      setExpanded((s) => new Set(s).add(next.parent));
+      setCollapsed((s) => (s.has(next.parent) ? new Set([...s].filter((x) => x !== next.parent)) : s));
+    }
     setEditing(next);
   };
 
@@ -445,7 +474,7 @@ export default function FileTree({
             active={activePath}
             onSelect={onSelect}
             onMenu={setMenu}
-            expanded={expanded}
+            expanded={isOpen}
             toggle={toggle}
             editing={editing}
             startEdit={startEdit}
