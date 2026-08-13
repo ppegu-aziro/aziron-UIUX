@@ -13,7 +13,16 @@ import { describe, expect, it } from "vitest";
 
 import { FIELDS, FILL_COUNTS, fieldAt, fillOf } from "@/data/agentJsonSchema";
 import { AGENTS_V2, KNOWLEDGE_SOURCES } from "@/data/agentsV2";
-import { AUTHORING, RECORD_EXAMPLES, SUGGESTIONS, chatRecipe, pickRecipe, retrieve } from "@/data/agentRuns";
+import {
+  AUTHORING,
+  RECORD_EXAMPLES,
+  SUGGESTIONS,
+  chatRecipe,
+  pickRecipe,
+  headingsOf,
+  retrieve,
+  sectionsOf,
+} from "@/data/agentRuns";
 import {
   BEAT,
   EMPTY_RUN,
@@ -729,5 +738,137 @@ describe("attaching knowledge", () => {
         expect(KNOWLEDGE_SOURCES.some((s) => s.name === name), `invented ${name}`).toBe(true);
       }
     }
+  });
+});
+
+/* ── editing an existing file ────────────────────────────────────────────── */
+
+describe("editing content that is already there", () => {
+  const run = (prompt, rec = WRITTEN) => compileRun(pickRecipe("authoring", prompt, rec), prompt, rec);
+
+  /** Replay a run's writes to get the bytes it would leave behind. */
+  const bytesOf = (events, rec) => {
+    const files = new Map(rec.files.map((f) => [f.path, f.content]));
+    for (const e of events) {
+      if (e.t === "file" && !files.has(e.path)) files.set(e.path, "");
+      if (e.t === "patch") files.set(e.path, e.prev + e.text);
+      if (e.t === "set") files.set(e.path, e.next);
+    }
+    return files;
+  };
+
+  it("appends to the entrypoint without writing it out twice", () => {
+    // The fallback recipe streamed the WHOLE document as the thing to append,
+    // on top of the document -- so every fallback turn doubled AGENT.md, and
+    // the copy looked enough like the original to pass for a rendering glitch.
+    const prompt = "wubble fnord zorp";
+    const after = bytesOf(run(prompt), WRITTEN).get("AGENT.md");
+    expect((after.match(/^# Leave Desk$/gm) ?? [])).toHaveLength(1);
+    expect(after.startsWith(WRITTEN.files[0].content.replace(/\s+$/, ""))).toBe(true);
+    expect(after).toMatch(/## Wubble fnord zorp/);
+  });
+
+  it("splices a section in after the heading that was named", () => {
+    const prompt = 'add a section after "How to answer" about escalation';
+    const recipe = pickRecipe("authoring", prompt, WRITTEN);
+    expect(recipe.id).toBe("add-section");
+
+    const events = run(prompt);
+    const edit = events.find((e) => e.t === "set" && e.path === "AGENT.md");
+    expect(edit, "no splice was planned").toBeTruthy();
+
+    const before = WRITTEN.files[0].content;
+    // Everything up to the splice point is byte-identical, and so is the tail.
+    const cut = before.indexOf("## When to ask first");
+    expect(edit.next.slice(0, cut)).toBe(before.slice(0, cut));
+    expect(edit.next.endsWith(before.slice(cut))).toBe(true);
+    // And it landed in the middle, not at the end.
+    expect(edit.next.indexOf("## When to ask first")).toBeGreaterThan(cut);
+  });
+
+  it("changes nothing when the named heading does not exist", () => {
+    const prompt = 'add a section after "Nonexistent Heading" about escalation';
+    const events = run(prompt);
+    expect(events.some((e) => ["set", "patch", "file"].includes(e.t))).toBe(false);
+    expect(events.filter((e) => e.t === "token").map((e) => e.text).join("")).toMatch(/could not find/);
+  });
+
+  it("gives every section a byte range that actually delimits it", () => {
+    for (const s of sectionsOf(WRITTEN)) {
+      const file = WRITTEN.files.find((f) => f.path === s.file);
+      expect(file.content.slice(s.start, s.end)).toContain(s.heading);
+      expect(s.end).toBeGreaterThan(s.start);
+    }
+  });
+
+  it("never streams into a file that already exists with an empty starting point", () => {
+    // write(path, body) defaults from "" — used on an existing path the first
+    // chunk's prev is wrong, the guard fails, and the run blames the user for
+    // an edit they never made.
+    for (const recipe of AUTHORING) {
+      for (const record of RECORDS) {
+        for (const prompt of PROMPTS) {
+          for (const ev of compileRun(recipe, prompt, record)) {
+            if (ev.t !== "file") continue;
+            const existing = record.files.find((f) => f.path === ev.path);
+            if (existing && existing.content) {
+              expect(ev.fresh, `${recipe.id} restarts ${ev.path}`).toBe(false);
+            }
+          }
+        }
+      }
+    }
+  });
+});
+
+describe("headings as splice anchors", () => {
+  // The case a tidy fixture misses: "make it shorter" empties a section, and
+  // the retrieval index then refuses to see the heading at all.
+  const EMPTIED = normalise({
+    id: "a-emptied",
+    name: "Leave Desk",
+    files: [{ path: "AGENT.md", content: "# Leave Desk\n\nIntro.\n\n## How to answer\n\n## When to ask first\n\nAsk first.\n" }],
+  });
+
+  it("sees a heading with no body under it, where the retrieval index does not", () => {
+    expect(sectionsOf(EMPTIED).map((s) => s.heading)).not.toContain("How to answer");
+    expect(headingsOf(EMPTIED).map((s) => s.heading)).toContain("How to answer");
+  });
+
+  it("splices after an emptied heading rather than refusing", () => {
+    const prompt = 'add a section after "How to answer" about escalation';
+    const events = compileRun(pickRecipe("authoring", prompt, EMPTIED), prompt, EMPTIED);
+    const edit = events.find((e) => e.t === "set");
+    expect(edit, "refused to splice after an empty section").toBeTruthy();
+    const before = EMPTIED.files[0].content;
+    const cut = before.indexOf("## When to ask first");
+    expect(edit.next.slice(0, cut)).toBe(before.slice(0, cut));
+    expect(edit.next.endsWith(before.slice(cut))).toBe(true);
+  });
+
+  it("gives every heading a range that contains it", () => {
+    for (const h of headingsOf(WRITTEN)) {
+      const file = WRITTEN.files.find((f) => f.path === h.file);
+      expect(file.content.slice(h.start, h.end)).toContain(h.heading);
+    }
+  });
+});
+
+describe("the spliced heading", () => {
+  it("is named for what the section is about, not for the leftover words", () => {
+    // "add a section after X about escalation" once produced "## A": the
+    // subject sits past the anchor phrase, so taking the leftovers takes the
+    // article in front of "section".
+    const prompt = 'add a section after "How to answer" about escalation';
+    const events = compileRun(pickRecipe("authoring", prompt, WRITTEN), prompt, WRITTEN);
+    const edit = events.find((e) => e.t === "set");
+    expect(edit.next).toMatch(/^## Escalation$/m);
+  });
+
+  it("falls back to the leftover words when nothing says what it is about", () => {
+    const prompt = 'add a rollback section after "How to answer"';
+    const events = compileRun(pickRecipe("authoring", prompt, WRITTEN), prompt, WRITTEN);
+    const edit = events.find((e) => e.t === "set");
+    expect(edit.next).toMatch(/^## Rollback$/m);
   });
 });

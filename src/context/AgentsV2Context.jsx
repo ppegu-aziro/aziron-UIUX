@@ -209,10 +209,26 @@ export function AgentsV2Provider({ children }) {
         patch(id, (a) => {
           const version = a.release ? bumpVersion(a.release.version, kind) : "1.0.0";
           const next = targets?.length ? targets : a.targets.length ? a.targets : ["claude"];
+          /*
+           * The manifest is what makes a version mean anything.
+           *
+           * Computed from the record this patch is ABOUT to produce, not from
+           * the one it was called with: the generated config file carries the
+           * version and the target list, so a manifest taken a moment earlier
+           * describes a package that was never released. Building `after`
+           * here is the only way to serialise the file the release actually
+           * ships, since the store has not committed yet.
+           */
+          const after = { ...a, release: { version, published: "just now" }, targets: next };
+          const manifest = [
+            ...a.files.map((f) => ({ path: f.path, chars: f.content.length })),
+            { path: AGENT_JSON_PATH, chars: serialiseAgentJson(after).length },
+          ].sort((x, y) => x.path.localeCompare(y.path));
+
           return {
             release: { version, published: "just now" },
             targets: next,
-            releaseNotes: [{ version, notes, at: "just now" }, ...(a.releaseNotes ?? [])],
+            releaseNotes: [{ version, notes, at: "just now", manifest }, ...(a.releaseNotes ?? [])],
           };
         }),
 

@@ -14,7 +14,7 @@
  * screenshot.
  */
 
-import { SEED } from "@/data/preparationSchema";
+import { PREPARATION_PATH, SEED } from "@/data/preparationSchema";
 import {
   ALL_TOOLS,
   API_TOKENS,
@@ -31,6 +31,7 @@ import {
   quote,
   say,
   set,
+  statedIn,
   step,
   think,
   write,
@@ -100,8 +101,17 @@ const hasFolder = (a, dir) =>
 const tightened = (body) =>
   body.split("\n").filter((l) => !l.startsWith("- ")).join("\n").replace(/\n{3,}/g, "\n\n");
 
-const appendHeading = (body, prompt) =>
-  `${body.replace(/\s+$/, "")}\n\n## ${titleOf(prompt)}\n\nApply this when it is relevant to the request.\n`;
+/**
+ * The section to APPEND, not the document with it appended.
+ *
+ * write(path, body, {from}) streams `body` on to the end of `from`, so handing
+ * it a whole document that already contains `from` writes the file out twice.
+ * It did: every fallback turn doubled AGENT.md, heading and all, and the copy
+ * looked enough like the original to read as a rendering glitch rather than a
+ * write.
+ */
+const sectionFor = (prompt) =>
+  `\n\n## ${titleOf(prompt)}\n\nApply this when it is relevant to the request.\n`;
 
 /* ── authoring recipes ───────────────────────────────────────────────────── */
 
@@ -272,20 +282,116 @@ const addScript = {
   ],
 };
 
+/**
+ * A section spliced into the MIDDLE of an existing file.
+ *
+ * Deliberately a `set` rather than a stream. A streamed chunk only ever extends
+ * the end of a file -- the player computes `prev + text` -- so a mid-file edit
+ * is not expressible in that vocabulary at all. `set` is also the only write
+ * with an exact undo, which matters more here than the typing animation does:
+ * this one changes something the user already wrote.
+ */
+const addSection = {
+  id: "add-section",
+  title: "add a section to a file",
+  match: (prompt) => /\b(add|insert|new)\b.{0,20}\bsection\b/.test(prompt) && /\b(after|under|below)\b/.test(prompt),
+  build: (prompt, a) => {
+    // headingsOf, not sectionsOf. The retrieval index drops a heading with no
+    // body under it, correctly — there is nothing there to quote. As an anchor
+    // index that is wrong: an empty section is a perfectly good place to insert
+    // after, and "make it shorter" leaves several behind. Measured on a real
+    // record whose "## How to answer" had been emptied by an earlier run.
+    const anchor = headingsOf(a).find((s) => statedIn(prompt, s.heading));
+    if (!anchor) {
+      return [
+        think("looking for that heading in this agent's files"),
+        ...say(
+          "I could not find a heading by that name, so I changed nothing. Name one exactly as it appears in the file — I match the words, not the meaning.",
+        ),
+        ...headingsOf(a).slice(0, 5).map((s) => step("file", s.heading, s.file)),
+      ];
+    }
+    const file = a.files.find((f) => f.path === anchor.file);
+    /*
+     * What the new section is ABOUT, which is not what is left over after the
+     * instruction words are removed.
+     *
+     * "add a section after X about escalation" strips down to "a" if you take
+     * the leftovers, because the subject sits past the anchor phrase — and the
+     * file then gets a heading called "A". So the subject is read from "about
+     * …" when it is there, and only otherwise from what remains once the
+     * quoted anchor and the instruction words are gone.
+     */
+    const subject =
+      (/\babout\s+(.+)$/i.exec(prompt)?.[1] ?? "").trim() ||
+      String(prompt)
+        .replace(/["“][^"”]*["”]/g, "")
+        .replace(/\b(add|insert|new|an?|the|section|after|under|below|to)\b/gi, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    const title = titleOf(subject) || "New section";
+    const block = [
+      ``,
+      `## ${title}`,
+      ``,
+      `${title}.`,
+      ``,
+      `Spliced in after “${anchor.heading}” by a scripted recipe, from the words`,
+      `in your prompt — no model read this file. Replace this paragraph with the`,
+      `actual instruction; the agent reads the file, not this note.`,
+      ``,
+    ].join("\n");
+    const next = file.content.slice(0, anchor.end) + block + file.content.slice(anchor.end);
+    return [
+      think(`reading ${anchor.file} — ${headingsOf(a).length} headings`),
+      ...say(
+        `Splicing it in after “${anchor.heading}” rather than appending at the end. Everything before and after that point stays byte-identical.`,
+      ),
+      set(anchor.file, file.content, next),
+      done(
+        "A wholesale replacement, so the undo above puts the file back exactly. Streaming could not have done this — a chunk only ever extends the end.",
+      ),
+    ];
+  },
+};
+
 const addPreparation = {
   id: "add-preparation",
   title: "add machine setup",
   match: (prompt) => /\bprepar|setup|set up|install|dependenc|precheck\b/.test(prompt),
-  build: () => [
-    think("`.aziron/` already holds the generated settings file"),
-    ...say(
-      "Adding a preparation document beside it. It declares what a machine needs before the agent runs — and the last strategy declares no requirements, so preparation can never dead-end.",
-    ),
-    ...write(".aziron/preparation.yaml", SEED),
-    done(
-      "Open it and the setup pane takes over from the text editor. That pane commits into the file itself — preparation.yaml's truth is its own bytes.",
-    ),
-  ],
+  build: (prompt, a) => {
+    /*
+     * Refuse rather than overwrite.
+     *
+     * This streamed SEED from an empty starting point, which on an agent that
+     * already HAS a preparation document meant addFile no-opped, every chunk's
+     * `prev` disagreed with the store, and the run abandoned the file while
+     * reporting that the user had edited it. Silently replacing it would have
+     * been worse: that file is hand-written and its bytes are the truth.
+     */
+    const existing = a?.files?.find((f) => f.path === PREPARATION_PATH);
+    if (existing) {
+      const lines = existing.content.split("\n").length;
+      return [
+        think("checking whether this folder already declares its setup"),
+        ...say(
+          `There is already a preparation document here — ${lines} lines of it — and it is hand-written, so I am not replacing it. Open it and the setup pane will let you add a check or a step with the schema in front of you.`,
+        ),
+        step("file", PREPARATION_PATH, `${lines} lines, left alone`),
+        done("Its bytes are the truth for that file, which is why nothing here rewrites them wholesale."),
+      ];
+    }
+    return [
+      think("`.aziron/` already holds the generated settings file"),
+      ...say(
+        "Adding a preparation document beside it. It declares what a machine needs before the agent runs — and the last strategy declares no requirements, so preparation can never dead-end.",
+      ),
+      ...write(PREPARATION_PATH, SEED),
+      done(
+        "Open it and the setup pane takes over from the text editor. That pane commits into the file itself — preparation.yaml's truth is its own bytes.",
+      ),
+    ];
+  },
 };
 
 /**
@@ -644,7 +750,7 @@ const revise = {
       ...say(
         "That didn't match anything I have a recipe for, so this is the generic one: I appended your words to AGENT.md as a heading. Keyword matching, not meaning.",
       ),
-      ...write("AGENT.md", appendHeading(entry.content, prompt), { from: entry.content }),
+      ...write("AGENT.md", sectionFor(prompt), { from: entry.content.replace(/\s+$/, "") }),
       done(
         "If that wasn't what you wanted, it is the honest answer rather than a better-looking wrong one. Try “add a reference file”, “add a script”, “make it shorter”, or describe what it should do from scratch.",
       ),
@@ -658,6 +764,9 @@ export const AUTHORING = [
   // record, and both contain words the looser file matchers would claim.
   rename,
   describe,
+  // Before add-reference: "add a section after X" edits a file that already
+  // exists, and the reference matcher would claim it and write a new one.
+  addSection,
   // And before `configure`, whose "model" and "set up for" both appear in
   // sentences that are really about tools or a corpus.
   grantTools,
@@ -707,6 +816,35 @@ const terms = (s) =>
     .split(/[^a-z0-9]+/)
     .filter((w) => w.length > 2 && !STOP.has(w));
 
+/**
+ * Every heading in the agent's markdown, with the byte range it governs.
+ *
+ * Kept separate from `sectionsOf` because the two want different things from
+ * the same scan. Retrieval wants sections with something in them — a heading
+ * with no body has nothing to quote, and offering it as a match would mean
+ * answering a question with a title. Splicing wants every heading, because an
+ * empty section is a perfectly ordinary place to insert after and "make it
+ * shorter" leaves them behind by design.
+ */
+export function headingsOf(agent) {
+  const out = [];
+  for (const file of agent?.files ?? []) {
+    if (!/\.(md|markdown|txt)$/i.test(file.path)) continue;
+    const lines = file.content.split("\n");
+    let at = 0;
+    let open = null;
+    for (const line of lines) {
+      if (/^#{1,2} /.test(line)) {
+        if (open) open.end = at;
+        open = { file: file.path, heading: line.replace(/^#+ /, "").trim(), start: at, end: file.content.length };
+        out.push(open);
+      }
+      at += line.length + 1;
+    }
+  }
+  return out;
+}
+
 /** Every `#`/`##` section of every file in the agent's folder, as a corpus. */
 export function sectionsOf(agent) {
   const out = [];
@@ -715,18 +853,29 @@ export function sectionsOf(agent) {
     const lines = file.content.split("\n");
     let heading = null;
     let body = [];
+    let at = 0; // character offset of the line being read
+    let start = 0; // where the current section's heading begins
+    let end = 0; // and where it ends, which is where a splice goes
+    // `file` stays the PATH string. retrieve() and the chat recipes render it
+    // as text, and making it an object here prints [object Object] in a quote.
     const flush = () => {
-      if (heading && body.join("").trim()) out.push({ file: file.path, heading, body: body.join("\n").trim() });
+      if (heading && body.join("").trim()) {
+        out.push({ file: file.path, heading, body: body.join("\n").trim(), start, end });
+      }
       body = [];
     };
     for (const line of lines) {
       if (/^#{1,2} /.test(line)) {
+        end = at;
         flush();
         heading = line.replace(/^#+ /, "").trim();
+        start = at;
       } else if (heading) {
         body.push(line);
       }
+      at += line.length + 1;
     }
+    end = file.content.length;
     flush();
   }
   return out;

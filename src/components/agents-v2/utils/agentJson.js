@@ -148,9 +148,48 @@ export function looksLikeSecret(value) {
   );
 }
 
+/** What kind of credential it looks like, so copy can name it without printing it. */
+const KIND_OF = (v) =>
+  /\bsk-ant-/.test(v) ? "An Anthropic key"
+  : /\bsk-[A-Za-z0-9]{20,}/.test(v) ? "An OpenAI key"
+  : /\b(ghp_|github_pat_)/.test(v) ? "A GitHub token"
+  : /\bxox[baprs]-/.test(v) ? "A Slack token"
+  : /\bAKIA[0-9A-Z]{16}\b/.test(v) ? "An AWS key"
+  : /\bAIza/.test(v) ? "A Google key"
+  : "A credential";
+
+/**
+ * Credentials in a body of text, line by line.
+ *
+ * `looksLikeSecret` answers about ONE value and skips anything containing a
+ * vault reference, because a reference is not a secret. That is right for a
+ * scalar and fails open on a whole file: a single {{NAME}} anywhere would
+ * switch the scan off for the entire body — on precisely the files that use
+ * the vault, which is the idiom this product recommends. Measured on a file
+ * holding both a reference and a live token, the whole-body test returns false
+ * and this returns the token's line.
+ *
+ * So the references come out first and every line is judged on its own.
+ *
+ * @returns {Array<{line: number, kind: string}>} 1-based lines
+ */
+export function secretsIn(text) {
+  const out = [];
+  String(text ?? "")
+    .split("\n")
+    .forEach((line, i) => {
+      const bare = line.replace(/\{\{[^}]*\}\}/g, "");
+      if (looksLikeSecret(bare)) out.push({ line: i + 1, kind: KIND_OF(bare) });
+    });
+  return out;
+}
+
 const walkStrings = (node, path, out) => {
   if (typeof node === "string") {
-    if (looksLikeSecret(node)) out.push(path);
+    // Through the same primitive as the release gate, so the two cannot drift:
+    // a value the config editor flags must be one a release refuses, and the
+    // multi-line case is exactly where they used to disagree.
+    if (secretsIn(node).length) out.push(path);
   } else if (Array.isArray(node)) {
     node.forEach((v, i) => walkStrings(v, `${path}[${i}]`, out));
   } else if (node && typeof node === "object") {

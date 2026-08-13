@@ -23,6 +23,8 @@ import {
 } from "@/data/agentsV2";
 import { AGENT_JSON_PATH } from "@/data/agentJsonSchema";
 import { useAgentsV2 } from "@/context/AgentsV2Context";
+import { useReleasePlayer } from "./utils/useReleasePlayer";
+import ReleaseProgress from "./ReleaseProgress";
 
 /* ── shared bits ─────────────────────────────────────────────────────────── */
 
@@ -334,8 +336,9 @@ export function KnowledgeDialog({ agent, open, onOpenChange }) {
  * ship, because a release is the moment the files stop being yours to change
  * quietly — everything after this is installed on somebody's machine.
  */
-export function ReleaseDialog({ agent, open, onOpenChange }) {
-  const { release, agentFiles } = useAgentsV2();
+export function ReleaseDialog({ agent, open, onOpenChange, onOpenFile }) {
+  const { agentFiles } = useAgentsV2();
+  const player = useReleasePlayer({ agent });
   const [kind, setKind] = useState(agent?.release ? "minor" : "patch");
   const [notes, setNotes] = useState("");
   const [targets, setLocalTargets] = useState(
@@ -362,16 +365,21 @@ export function ReleaseDialog({ agent, open, onOpenChange }) {
     (a, b) => (ENTRY_FIRST[a.path] ?? 2) - (ENTRY_FIRST[b.path] ?? 2) || a.path.localeCompare(b.path),
   );
 
-  const go = () => {
-    // One patch, not two. Between a separate setTargets and release the record
-    // holds the new targets with the old version, and anything serialising in
-    // that window disagrees with the release that ships it.
-    release(agent.id, { kind, notes, targets });
-    toast.success(`${agent.name} v${next} released`, {
-      description: `Installable into ${targets.length} target${targets.length === 1 ? "" : "s"}.`,
-    });
-    onOpenChange(false);
-  };
+  /*
+   * Pressing the button no longer closes the dialog.
+   *
+   * A release used to be one synchronous call and a toast, which reported
+   * success before anything had been examined -- and nothing WAS examined,
+   * because nothing checked anything. The form now hands off to a compiled
+   * script whose checks read this workspace, and whose commit event only
+   * exists at all if they pass.
+   *
+   * The single patch that used to live here now lives in the player, for the
+   * same reason it was one patch: between a separate setTargets and release
+   * the record holds the new targets against the old version, and anything
+   * serialising in that window disagrees with the release that shipped it.
+   */
+  const plan = { kind, notes, targets, version: next };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -388,6 +396,21 @@ export function ReleaseDialog({ agent, open, onOpenChange }) {
           </DialogDescription>
         </DialogHeader>
 
+        {player.started ? (
+          <ReleaseProgress
+            agent={agent}
+            view={player.view}
+            busy={player.busy}
+            plan={plan}
+            onOpen={(at) => {
+              onOpenFile?.(at);
+              onOpenChange(false);
+            }}
+            onClose={() => onOpenChange(false)}
+            onBack={() => onOpenChange(false)}
+          />
+        ) : (
+          <>
         <div className="space-y-4">
           {!first && (
             <div>
@@ -479,15 +502,32 @@ export function ReleaseDialog({ agent, open, onOpenChange }) {
             </p>
           </div>
         </div>
+          </>
+        )}
 
-        <DialogFooter className="gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button type="button" size="sm" onClick={go} disabled={targets.length === 0}>
-            {targets.length === 0 ? "Pick a target" : `Release v${next}`}
-          </Button>
-        </DialogFooter>
+        {/* Once the run starts the progress view owns its own exits, so the
+            form's footer would be a second, contradictory set of them. */}
+        {!player.started && (
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-[11px] text-muted-foreground">
+              The checks read this workspace and write nothing. If they pass, the version is taken — and that part
+              cannot be undone.
+            </span>
+            <span className="flex gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => player.start(plan)}
+                disabled={targets.length === 0}
+              >
+                {targets.length === 0 ? "Pick a target" : `Check and release v${next}`}
+              </Button>
+            </span>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );
