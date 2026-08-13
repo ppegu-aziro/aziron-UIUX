@@ -26,8 +26,33 @@ export const done = (text) => ({ t: "done", text });
 /**
  * A field the run sets. `into` names the proposal it joins if the policy or the
  * record demotes it — see compileRun.
+ *
+ * `stated: true` claims the value came out of the prompt rather than out of the
+ * recipe's judgement. compileRun checks that claim against the prompt text, so
+ * it is a verifiable property rather than a recipe's assertion about itself.
  */
 export const field = (path, value, opts = {}) => ({ t: "field", path, value, ...opts });
+
+/**
+ * Did the user actually say this, word for word?
+ *
+ * The whole weight of `stated` rests here, so it is deliberately strict: every
+ * part of the value has to appear in what was typed. Punctuation and case are
+ * ignored, because "call it the Leave Desk." should match `Leave Desk`, and
+ * nothing else is. A recipe that infers a value cannot pass this by claiming it
+ * did not.
+ */
+const flat = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+export function statedIn(prompt, value) {
+  const hay = ` ${flat(prompt)} `;
+  const parts = Array.isArray(value) ? value : [value];
+  if (!parts.length) return false;
+  return parts.every((p) => {
+    const needle = flat(typeof p === "object" && p ? (p.label ?? p.prompt ?? "") : p);
+    return needle.length > 0 && hay.includes(` ${needle} `);
+  });
+}
 
 export const propose = (id, title, note, pairs) => ({ t: "propose", id, title, note, pairs });
 
@@ -125,6 +150,15 @@ export const BEAT = {
  *     so a field added to the schema next year cannot quietly become fillable
  *     by an old recipe that never heard of it.
  *
+ *     UNLESS the user said the value themselves. A proposal exists for a value
+ *     the assistant CHOSE — "I picked this name, is it right?" — and asking
+ *     that about a name somebody just typed is asking a question they already
+ *     answered. So a `stated` field is filled, and the claim is checked against
+ *     the prompt rather than trusted: a recipe cannot promote its own guess by
+ *     labelling it. `never` stays never either way, because a version, a
+ *     credential and a visibility are not the assistant's to write no matter
+ *     who asked.
+ *
  *  3. A field whose `when()` is currently false is INVISIBLE — the form drops it
  *     and the serialiser omits its whole section. Writing it anyway is a change
  *     nobody can see, and the next save of AGENT.json reverts it to the
@@ -147,8 +181,12 @@ export function compileRun(recipe, prompt, agent) {
     if (!spec) throw new Error(`recipe "${recipe.id}": no such field "${ev.path}"`);
     if (spec.fill === "never") throw new Error(`recipe "${recipe.id}": "${ev.path}" is fill:never`);
 
+    if (ev.stated && !statedIn(prompt, ev.value)) {
+      throw new Error(`recipe "${recipe.id}": "${ev.path}" claims to be stated but is not in the prompt`);
+    }
+
     const visible = !spec.when || spec.when(ctx);
-    if (spec.fill === "auto" && visible) {
+    if ((spec.fill === "auto" || ev.stated) && visible) {
       out.push({ ...ev, was: spec.read(agent), label: spec.label });
       continue;
     }

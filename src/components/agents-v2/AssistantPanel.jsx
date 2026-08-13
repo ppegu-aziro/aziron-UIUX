@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import { Maximize2, Minimize2, Send, Sparkles, X } from "lucide-react";
 
-import { AUTHORING, SUGGESTIONS } from "@/data/agentRuns";
+import { AUTHORING, RECORD_EXAMPLES, SUGGESTIONS } from "@/data/agentRuns";
 import { useRunPlayer } from "./utils/useRunPlayer";
 import RunTranscript from "./RunTranscript";
 
@@ -204,6 +204,29 @@ export default function AssistantPanel({
                 className="rounded-[6px] px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
               >
                 {s.label}
+              </button>
+            ))}
+          </div>
+          {/*
+            Shown as the literal sentences rather than as tidy labels like
+            "Rename". The rule worth teaching is that a value IN the request is
+            set outright while a value left to the assistant is offered back as
+            a question — and an example carrying its own quoted value teaches
+            that in one click, where a label would hide the very thing that
+            makes the difference.
+          */}
+          <div className="flex flex-wrap items-center gap-1 border-t border-border px-3 py-2">
+            <span className="text-[10px] text-muted-foreground/70">or change the agent itself:</span>
+            {RECORD_EXAMPLES.map((p) => (
+              <button
+                key={p}
+                type="button"
+                disabled={player.busy}
+                onClick={() => send(p)}
+                title={p}
+                className="max-w-full truncate rounded-[6px] border border-border px-2 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
+              >
+                {p}
               </button>
             ))}
           </div>

@@ -15,7 +15,7 @@
  */
 
 import { SEED } from "@/data/preparationSchema";
-import { API_TOKENS, PROVIDERS } from "@/data/agentsV2";
+import { API_TOKENS, CATEGORIES, PROVIDERS } from "@/data/agentsV2";
 import {
   done,
   field,
@@ -281,30 +281,154 @@ const addPreparation = {
   ],
 };
 
+/**
+ * The value the user typed, when they typed one.
+ *
+ * Quoted first, because a quoted string is unambiguous and is what people reach
+ * for when the value contains the words that would otherwise end the phrase.
+ * Then whatever follows the verb, up to a full stop.
+ */
+const FILLER = /^(it|this|that|the agent|something|anything|whatever|please)$/i;
+
+const quotedOrAfter = (prompt, verbs) => {
+  const quoted = /["“”'‘’](.+?)["“”'‘’]/.exec(prompt);
+  const re = new RegExp(String.raw`\b(?:${verbs})\s+(?:it\s+)?(?:to\s+|as\s+)?(.+)`, "i");
+  const raw = quoted ? quoted[1] : (re.exec(prompt)?.[1] ?? "");
+  const value = raw.trim().replace(/[.!?]+$/, "").replace(/^["'“‘]|["'”’]$/g, "").trim();
+  // "rename it" leaves "it" behind — and "it" passes the stated check, because
+  // it genuinely is in the prompt. That would name somebody's agent "it". A
+  // request with no value in it is a request to be asked, not a value.
+  if (!value || FILLER.test(value) || !/[a-z0-9]/i.test(value)) return "";
+  return value;
+};
+
+const rename = {
+  id: "rename",
+  title: "rename it",
+  match: (prompt) => /\b(call it|rename|name it|change the name)\b/.test(prompt),
+  build: (prompt, a) => {
+    const name = quotedOrAfter(prompt, "call it|rename(?: it)?(?: to)?|name it|change the name to");
+    if (!name) {
+      return [
+        think("looking for a name in that"),
+        ...say(
+          "I could not find a name in that. Put it in quotes — `call it \"Leave Desk\"` — and I will set it and the heading together.",
+        ),
+      ];
+    }
+    const entry = entryOf(a);
+    // The heading goes with it. Leaving `# Old Name` at the top of a file whose
+    // agent is now called something else is a contradiction the reader has to
+    // notice and fix by hand, and a rename that only half-lands is worse than
+    // one that asks first.
+    const rewritten = /^# .*/m.test(entry.content)
+      ? entry.content.replace(/^# .*/m, `# ${name}`)
+      : null;
+    return [
+      think(`renaming — the slug and the install path come off this too`),
+      ...say(
+        `Setting it to “${name}”. You said it, so there is nothing for me to propose — I only ask when the name is my guess rather than yours.`,
+      ),
+      field("package.name", name, { stated: true }),
+      rewritten && rewritten !== entry.content ? set("AGENT.md", entry.content, rewritten) : null,
+      done(
+        `The slug is derived rather than stored, so the install path moved with it — \`${name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "")}\`. Anyone who already installed it keeps the old one until they update.`,
+      ),
+    ];
+  },
+};
+
+const describe = {
+  id: "describe",
+  title: "change the description",
+  match: (prompt) => /\b(describe|description|summar(y|ise|ize)|tagline)\b/.test(prompt),
+  build: (prompt) => {
+    const text = quotedOrAfter(prompt, "describe(?: it)?(?: as)?|description(?: to)?|summary(?: to)?|tagline(?: to)?");
+    if (!text) {
+      return [
+        think("looking for a description in that"),
+        ...say(
+          'I could not find the wording in that. Put it in quotes — `describe it as "answers leave questions from the handbook"`.',
+        ),
+      ];
+    }
+    return [
+      think("the description is what the catalog shows and what routing reads"),
+      ...say(`Replacing it with that.`),
+      field("package.description", text, { stated: true }),
+      done(
+        "This is the sentence the catalog lists it under and the one used to decide when it is relevant, so it is worth being specific in.",
+      ),
+    ];
+  },
+};
+
+/** Numbers people actually type, with the units they type them in. */
+const numberFor = (prompt, re) => {
+  const hit = re.exec(prompt);
+  return hit ? Number(hit[1]) : null;
+};
+
 const configure = {
   id: "configure",
   title: "change the settings",
   match: (prompt) =>
-    /\bset (it )?up for|make it (careful|strict|fast)|use (anthropic|openai)|temperature|careful|deterministic|model\b/.test(
+    /\bset (it )?up for|make it (careful|strict|fast|public|private)|use (anthropic|openai)|temperature|max tokens|iterations|category|careful|deterministic|creative|model\b/.test(
       prompt,
     ),
-  build: (prompt) => {
-    const provider = providerFrom(prompt);
-    const model = modelFrom(prompt);
+  build: (prompt, a) => {
+    const p = String(prompt).toLowerCase();
+    const temp = numberFor(p, /temperature\s*(?:to|=|of)?\s*([0-9]*\.?[0-9]+)/);
+    const tokens = numberFor(p, /max ?tokens?\s*(?:to|=|of)?\s*([0-9]+)/);
+    const iters = numberFor(p, /(?:max )?iterations?\s*(?:to|=|of)?\s*([0-9]+)/);
+    const category = CATEGORIES.find((c) => new RegExp(`\\b${c.toLowerCase()}\\b`).test(p));
+    const wantsPublic = /\b(public|publish|share it with the org)\b/.test(p);
+
+    // Inferred, not stated — so it stays subject to the ordinary policy.
+    const mood = /\bdeterministic|careful|strict|precise\b/.test(p)
+      ? 0.1
+      : /\bcreative|loose|varied\b/.test(p)
+        ? 0.9
+        : null;
+
+    const explicit = [
+      temp != null ? field("runtime.temperature", temp, { stated: true, into: "runtime" }) : null,
+      tokens != null ? field("runtime.maxTokens", tokens, { stated: true, into: "runtime" }) : null,
+      iters != null ? field("runtime.maxIterations", iters, { stated: true, into: "runtime" }) : null,
+      category ? field("package.category", category, { stated: true }) : null,
+      temp == null && mood != null ? field("runtime.temperature", mood, { into: "runtime" }) : null,
+    ].filter(Boolean);
+
+    const wantsModel = /\buse (anthropic|openai)|model|bind\b/.test(p);
+    const provider = providerFrom(p);
+    const model = modelFrom(p);
+
     return [
       think("this one only touches settings — no files change"),
       ...say(
-        "Two of these I can set outright. The model binding I can't: it picks a credential, and that is a choice you make, not one I make for you.",
+        explicit.length
+          ? "Setting the ones you named. Anything that binds a credential or publishes stays a question, however plainly it was asked."
+          : "Nothing in that names a value I can set, so here is what I can offer instead.",
       ),
-      field("runtime.temperature", 0.2, { into: "runtime" }),
-      field("runtime.maxIterations", 6, { into: "runtime" }),
-      propose("runtime", `Bind ${provider} · ${model}`, `also binds the “${tokenLabelFor(provider)}” credential`, [
-        ["runtime.provider", provider],
-        ["runtime.model", model],
-      ]),
-      done(
-        "Temperature and iteration count are Aziron-only — a released copy runs on whatever model its host provides, and ignores both.",
-      ),
+      ...explicit,
+      wantsModel
+        ? propose("runtime", `Bind ${provider} · ${model}`, `also binds the “${tokenLabelFor(provider)}” credential`, [
+            ["runtime.provider", provider],
+            ["runtime.model", model],
+          ])
+        : null,
+      // Asked for outright and still refused, with the reason. A mock that
+      // quietly ignores half a request teaches the audience it was understood.
+      wantsPublic
+        ? done(
+            `I did not make it public. Visibility is the one setting that changes who else can see this, so it is not mine to write even when you ask plainly — it is two clicks away under ${a.name || "the agent"} → Settings.`,
+          )
+        : done(
+            "Temperature, token and iteration limits are Aziron-only — a released copy runs on whatever model its host provides and ignores all three.",
+          ),
     ];
   },
 };
@@ -356,10 +480,14 @@ const revise = {
 
 export const AUTHORING = [
   createFromIntent,
+  // Before the file recipes: "call it X" and "describe it as X" are about the
+  // record, and both contain words the looser file matchers would claim.
+  rename,
+  describe,
+  configure,
   addReference,
   addScript,
   addPreparation,
-  configure,
   tighten,
   revise,
 ];
@@ -369,6 +497,20 @@ export const SUGGESTIONS = [
   { id: "add-reference", label: "Add a reference file" },
   { id: "add-preparation", label: "Add machine setup" },
   { id: "tighten", label: "Make it shorter" },
+];
+
+/**
+ * Prompts that show the record changing rather than the folder.
+ *
+ * Written as complete sentences with the value in them, because the value has
+ * to be IN the prompt for the assistant to set it outright rather than ask —
+ * and a chip that demonstrates the rule teaches it faster than a sentence
+ * about the rule would.
+ */
+export const RECORD_EXAMPLES = [
+  'call it "Leave Desk"',
+  'describe it as "answers leave and benefits questions from the handbook"',
+  "set temperature to 0.1 and max iterations to 4",
 ];
 
 /* ── runtime chat ────────────────────────────────────────────────────────── */

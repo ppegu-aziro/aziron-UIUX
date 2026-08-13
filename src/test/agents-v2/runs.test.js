@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 
 import { FIELDS, FILL_COUNTS, fieldAt, fillOf } from "@/data/agentJsonSchema";
 import { AGENTS_V2 } from "@/data/agentsV2";
-import { AUTHORING, SUGGESTIONS, chatRecipe, pickRecipe, retrieve } from "@/data/agentRuns";
+import { AUTHORING, RECORD_EXAMPLES, SUGGESTIONS, chatRecipe, pickRecipe, retrieve } from "@/data/agentRuns";
 import {
   BEAT,
   EMPTY_RUN,
@@ -21,6 +21,7 @@ import {
   reduceRun,
   say,
   set,
+  statedIn,
   write,
 } from "@/components/agents-v2/utils/runScript";
 
@@ -84,6 +85,10 @@ const RECORDS = [BLANK, WRITTEN, ...SEEDED];
 
 const PROMPTS = [
   "answer HR questions about leave and benefits from the handbook",
+  'call it "Leave Desk"',
+  'describe it as "answers leave questions from the handbook"',
+  "set temperature to 0.1 and max iterations to 4",
+  "make it public",
   "add a reference file about carry-over",
   "make it shorter",
   "add machine setup",
@@ -150,7 +155,9 @@ describe("every recipe against every record", () => {
             if (ev.t === "field") {
               const spec = fieldAt(ev.path);
               expect(spec, `no such field ${ev.path}`).toBeTruthy();
-              expect(spec.fill).toBe("auto");
+              // Either the policy allows it outright, or the user dictated it
+              // and compileRun checked that claim against the prompt itself.
+              expect(spec.fill === "auto" || ev.stated === true, `${ev.path} survived as neither`).toBe(true);
               // An auto fill must actually change something. A write returning
               // an empty delta is the silent failure: the ledger says applied
               // and patch() drops it on the floor.
@@ -476,5 +483,119 @@ describe("a run, applied through the store", () => {
     expect(rec.files.find((f) => f.path === target).content).toBe("mine");
     // And the entrypoint, which they did not touch, is complete.
     expect(rec.files.find((f) => f.path === "AGENT.md").content).toMatch(/## When to ask first/);
+  });
+});
+
+/* ── values the user dictated ────────────────────────────────────────────── */
+
+/**
+ * A proposal is for a value the assistant CHOSE. Asking "shall I call it Leave
+ * Desk?" of somebody who just typed `call it "Leave Desk"` is asking a question
+ * they already answered — so a stated value is filled instead.
+ *
+ * The whole safety of that rests on `stated` being verifiable rather than
+ * claimed, which is what these assert.
+ */
+describe("stated values", () => {
+  it("recognises the value only when it is really in the prompt", () => {
+    expect(statedIn('call it "Leave Desk"', "Leave Desk")).toBe(true);
+    expect(statedIn("call it the leave desk.", "Leave Desk")).toBe(true);
+    expect(statedIn("call it something good", "Leave Desk")).toBe(false);
+    expect(statedIn("set temperature to 0.1", 0.1)).toBe(true);
+    expect(statedIn("set temperature to 0.9", 0.1)).toBe(false);
+    expect(statedIn("", "anything")).toBe(false);
+  });
+
+  it("needs every part of a multi-part value, not just one", () => {
+    expect(statedIn("grant vector_search and web_search", ["vector_search", "web_search"])).toBe(true);
+    expect(statedIn("grant vector_search", ["vector_search", "web_search"])).toBe(false);
+  });
+
+  it("refuses a recipe that labels its own guess as stated", () => {
+    const liar = {
+      id: "liar",
+      build: () => [{ t: "field", path: "package.name", value: "Something I Invented", stated: true }],
+    };
+    expect(() => compileRun(liar, "call it whatever you like", BLANK)).toThrow(/claims to be stated/);
+  });
+
+  it("still refuses a stated value for a field that is never fillable", () => {
+    const liar = {
+      id: "liar",
+      build: () => [{ t: "field", path: "workspace.visibility", value: "public", stated: true }],
+    };
+    expect(() => compileRun(liar, "make it public", BLANK)).toThrow(/fill:never/);
+  });
+
+  it("sets a dictated name outright instead of proposing it", () => {
+    const prompt = 'call it "Leave Desk"';
+    const events = compileRun(pickRecipe("authoring", prompt, WRITTEN), prompt, WRITTEN);
+    const fill = events.find((e) => e.t === "field" && e.path === "package.name");
+    expect(fill.value).toBe("Leave Desk");
+    expect(events.some((e) => e.t === "propose")).toBe(false);
+  });
+
+  it("still only proposes a name it made up itself", () => {
+    const events = compileRun(AUTHORING[0], PROMPTS[0], BLANK);
+    expect(events.some((e) => e.t === "field" && e.path === "package.name")).toBe(false);
+    expect(events.find((e) => e.t === "propose" && e.pairs.some(([p]) => p === "package.name"))).toBeTruthy();
+  });
+
+  it("moves the heading with the name, so the file cannot contradict the record", () => {
+    // Deliberately not the name it already has: that rewrite is a no-op, and
+    // would let this pass without the replacement working at all.
+    const prompt = 'call it "Benefits Desk"';
+    const events = compileRun(pickRecipe("authoring", prompt, WRITTEN), prompt, WRITTEN);
+    const rewrite = events.find((e) => e.t === "set" && e.path === "AGENT.md");
+    expect(rewrite, "no heading rewrite was planned").toBeTruthy();
+    expect(rewrite.next).toMatch(/^# Benefits Desk$/m);
+    expect(rewrite.next).not.toMatch(/^# Leave Desk$/m);
+    // Everything below the heading is untouched.
+    expect(rewrite.next).toContain("## When to ask first");
+  });
+
+  it("replaces the description with the words that were dictated", () => {
+    const prompt = 'describe it as "answers leave questions from the handbook"';
+    const events = compileRun(pickRecipe("authoring", prompt, WRITTEN), prompt, WRITTEN);
+    const fill = events.find((e) => e.t === "field" && e.path === "package.description");
+    expect(fill.value).toBe("answers leave questions from the handbook");
+  });
+
+  it("reads numbers out of the prompt rather than picking its own", () => {
+    const prompt = "set temperature to 0.1 and max iterations to 4";
+    const events = compileRun(pickRecipe("authoring", prompt, WRITTEN), prompt, WRITTEN);
+    const at = (p) => events.find((e) => e.t === "field" && e.path === p)?.value;
+    expect(at("runtime.temperature")).toBe(0.1);
+    expect(at("runtime.maxIterations")).toBe(4);
+  });
+
+  it("asks for the value rather than inventing one when none was given", () => {
+    const events = compileRun(pickRecipe("authoring", "rename it", WRITTEN), "rename it", WRITTEN);
+    expect(events.some((e) => e.t === "field")).toBe(false);
+    expect(events.filter((e) => e.t === "token").map((e) => e.text).join("")).toMatch(/could not find a name/);
+  });
+
+  it("refuses to publish however plainly it is asked, and says why", () => {
+    const prompt = "make it public";
+    const events = compileRun(pickRecipe("authoring", prompt, WRITTEN), prompt, WRITTEN);
+    for (const ev of events) {
+      if (ev.t === "field") expect(ev.path).not.toBe("workspace.visibility");
+      if (ev.t === "propose") expect(ev.pairs.map(([p]) => p)).not.toContain("workspace.visibility");
+    }
+    expect(events.find((e) => e.t === "done").text).toMatch(/did not make it public/);
+  });
+
+  it("routes each worked example to the recipe it is an example of", () => {
+    expect(pickRecipe("authoring", RECORD_EXAMPLES[0], WRITTEN).id).toBe("rename");
+    expect(pickRecipe("authoring", RECORD_EXAMPLES[1], WRITTEN).id).toBe("describe");
+    expect(pickRecipe("authoring", RECORD_EXAMPLES[2], WRITTEN).id).toBe("configure");
+  });
+
+  it("every worked example really does state its value, or it teaches the wrong lesson", () => {
+    for (const prompt of RECORD_EXAMPLES) {
+      const events = compileRun(pickRecipe("authoring", prompt, WRITTEN), prompt, WRITTEN);
+      const fills = events.filter((e) => e.t === "field");
+      expect(fills.length, `${prompt} filled nothing`).toBeGreaterThan(0);
+    }
   });
 });

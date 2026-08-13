@@ -82,7 +82,7 @@ export function CheckRow({ node, goos, onJump, onEdit, editableAt }) {
           {onEdit ? (
             /* The label sits ABOVE the platforms map, so one machine's tab is
                the only place it appears and an edit reaches exactly one key. */
-            <span className="text-xs font-medium text-foreground">
+            <div className="text-xs font-medium text-foreground">
               <PreparationField
                 label={null}
                 name="Check name"
@@ -93,7 +93,7 @@ export function CheckRow({ node, goos, onJump, onEdit, editableAt }) {
                 validate={(v) => (v.trim() ? null : "A check needs a name.")}
                 onCommit={(v) => onEdit([...node.segments, "label"], v)}
               />
-            </span>
+            </div>
           ) : (
             <span className="text-xs font-medium text-foreground">{node.label || node.id}</span>
           )}
@@ -182,7 +182,11 @@ export default function PreparationStepCard({ step, goos, onJump, cursorPath, on
       <div className="flex flex-wrap items-start gap-2 px-3 pt-2">
         <div className="min-w-0 flex-1">
           {onEdit ? (
-            <p className="text-xs font-medium text-foreground">
+            /* A div, not a p. PreparationField renders a block, and the parser
+               closes an open <p> when one arrives — so the field ended up as a
+               SIBLING of the label rather than inside it, and every style meant
+               for it landed on an empty paragraph above. */
+            <div className="text-xs font-medium text-foreground">
               <PreparationField
                 label={null}
                 name="Step name"
@@ -193,7 +197,7 @@ export default function PreparationStepCard({ step, goos, onJump, cursorPath, on
                 validate={(v) => (v.trim() ? null : "A step needs a name.")}
                 onCommit={(v) => onEdit([...step.segments, "label"], v)}
               />
-            </p>
+            </div>
           ) : (
             <p className="text-xs font-medium text-foreground">{step.label || step.id}</p>
           )}
